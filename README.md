@@ -28,6 +28,25 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) and log in with your Prisma user data to explore the workspace.
 
+## 🔌 Configure the Transformer Provider
+
+The `/api/transform-prompt` endpoint speaks to any OpenAI-compatible API, including hosted OpenAI models and local runtimes such
+as [Ollama](https://ollama.com/). Set the following environment variables in your `.env` file to choose a provider:
+
+```bash
+# Example: local Ollama
+AI_BASE_URL="http://localhost:11434/v1"
+AI_MODEL="llama3"
+
+# Example: OpenAI
+AI_BASE_URL="https://api.openai.com/v1"
+AI_API_KEY="sk-..."
+AI_MODEL="gpt-4o-mini"
+```
+
+`AI_API_KEY` is optional for self-hosted providers that do not require authentication. PromptVerse automatically normalizes the
+base URL, so both local and remote deployments work without code changes.
+
 ## 📦 Install as an App
 1. Launch PromptVerse in Microsoft Edge, Chrome, or another PWA-capable browser.
 2. Click **Install App** in the top toolbar (or use your browser's install option).
