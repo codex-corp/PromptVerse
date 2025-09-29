@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
 
+type SupportedFormat = "markdown" | "json";
+
 export async function POST(request: NextRequest) {
+  let inputText = "";
+  let systemPrompt = "";
+  let format: SupportedFormat = "markdown";
+
   try {
-    const { inputText, systemPrompt, format } = await request.json();
+    const body = await request.json();
+    inputText = typeof body.inputText === "string" ? body.inputText : "";
+    systemPrompt = typeof body.systemPrompt === "string" ? body.systemPrompt : "";
+    format = body.format === "json" ? "json" : "markdown";
 
     if (!inputText || !systemPrompt) {
       return NextResponse.json(
@@ -12,10 +21,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Initialize ZAI SDK
     const zai = await ZAI.create();
 
-    // Create the prompt for transformation
     const prompt = `${systemPrompt}
 
 Original text:
@@ -23,65 +30,64 @@ ${inputText}
 
 ${format === "json" ? "Return the result in JSON format with a 'refinedPrompt' field." : "Return ONLY the refined prompt text in Markdown format."}`;
 
-    // Call the AI model
     const completion = await zai.chat.completions.create({
       messages: [
         {
           role: "system",
-          content: "You are an expert prompt engineer specializing in transforming raw text into effective AI prompts."
+          content: "You are an expert prompt engineer specializing in transforming raw text into effective AI prompts.",
         },
         {
           role: "user",
-          content: prompt
-        }
+          content: prompt,
+        },
       ],
       temperature: 0.7,
       max_tokens: 2000,
     });
 
-    let refinedPrompt = completion.choices[0]?.message?.content || "";
+    let refinedPrompt = completion.choices[0]?.message?.content?.trim() ?? "";
 
-    // Clean up the response
-    refinedPrompt = refinedPrompt.trim();
-
-    // If JSON format is requested, try to parse and validate
     if (format === "json") {
       try {
-        // Try to extract JSON from the response
         const jsonMatch = refinedPrompt.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]);
           refinedPrompt = JSON.stringify(parsed, null, 2);
         } else {
-          // Fallback: create JSON structure
-          refinedPrompt = JSON.stringify({
-            refinedPrompt: refinedPrompt,
-            originalText: inputText.substring(0, 100) + "...",
-            transformedAt: new Date().toISOString()
-          }, null, 2);
+          refinedPrompt = JSON.stringify(
+            {
+              refinedPrompt,
+              originalText: `${inputText.substring(0, 100)}...`,
+              transformedAt: new Date().toISOString(),
+            },
+            null,
+            2
+          );
         }
       } catch (error) {
         console.error("Error parsing JSON response:", error);
-        // Fallback to simple JSON structure
-        refinedPrompt = JSON.stringify({
-          refinedPrompt: refinedPrompt,
-          originalText: inputText.substring(0, 100) + "...",
-          transformedAt: new Date().toISOString()
-        }, null, 2);
+        refinedPrompt = JSON.stringify(
+          {
+            refinedPrompt,
+            originalText: `${inputText.substring(0, 100)}...`,
+            transformedAt: new Date().toISOString(),
+          },
+          null,
+          2
+        );
       }
     }
 
     return NextResponse.json({
       refinedPrompt,
       format,
-      success: true
+      success: true,
     });
-
   } catch (error) {
     console.error("Error in prompt transformation:", error);
-    
-    // Fallback response for demo purposes
-    const fallbackPrompt = `Transformed prompt based on: "${inputText.substring(0, 100)}..."
+
+    const previewText = inputText ? `${inputText.substring(0, 100)}...` : "No input provided.";
+    const fallbackPrompt = `Transformed prompt based on: "${previewText}"
 
 This refined prompt has been optimized for clarity, specificity, and effectiveness with AI models. The transformation focuses on:
 - Clear instructions and context
@@ -91,9 +97,9 @@ This refined prompt has been optimized for clarity, specificity, and effectivene
 
     return NextResponse.json({
       refinedPrompt: fallbackPrompt,
-      format: format || "markdown",
+      format,
       success: true,
-      note: "Fallback response due to API error"
+      note: "Fallback response due to API error",
     });
   }
 }
