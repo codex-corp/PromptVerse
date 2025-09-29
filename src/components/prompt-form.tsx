@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -109,6 +109,26 @@ export function PromptForm({
     setTags([]);
     onOpenChange(false);
   };
+
+  useEffect(() => {
+    if (initialData) {
+      form.reset({
+        title: initialData.title || "",
+        content: initialData.content || "",
+        description: initialData.description || "",
+        targetModel: initialData.targetModel || "",
+        temperature: initialData.temperature ?? 0.7,
+        maxTokens: initialData.maxTokens ?? 1000,
+        topP: initialData.topP ?? 1.0,
+        frequencyPenalty: initialData.frequencyPenalty ?? 0,
+        presencePenalty: initialData.presencePenalty ?? 0,
+        notes: initialData.notes || "",
+        categoryId: initialData.categoryId || "",
+        tags: initialData.tags || [],
+      });
+      setTags(initialData.tags || []);
+    }
+  }, [initialData, form]);
 
   const addTag = () => {
     if (currentTag && !tags.includes(currentTag)) {

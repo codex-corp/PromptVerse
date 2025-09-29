@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useDebounce } from "@/hooks/use-debounce";
 import { Search, X, Clock, TrendingUp, Filter } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -14,27 +14,38 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+type PromptSummary = {
+  id: string;
+  title: string;
+  content: string;
+  description?: string | null;
+  tags: Array<{ tag?: { name: string } } | { name: string }>;
+  targetModel: string;
+  category?: { id: string; name: string } | string | null;
+  viewCount?: number;
+  createdAt?: string;
+};
+
 interface AdvancedSearchProps {
   searchQuery: string;
   onSearchChange: (query: string) => void;
-  prompts: Array<{
-    id: string;
-    title: string;
-    content: string;
-    description?: string;
-    tags: string[];
-    targetModel: string;
-    category: string;
-    viewCount: number;
-    createdAt: string;
-  }>;
+  prompts: PromptSummary[];
   onSearchSuggestionClick?: (suggestion: string) => void;
 }
+
+const POPULAR_SEARCHES = [
+  "blog post",
+  "react component",
+  "product description",
+  "marketing copy",
+  "code generation",
+  "creative writing",
+] as const;
 
 interface SearchSuggestion {
   text: string;
   type: "recent" | "popular" | "suggestion";
-  prompt?: any;
+  prompt?: PromptSummary & { tagNames: string[]; categoryName: string };
 }
 
 export function AdvancedSearch({
@@ -43,64 +54,76 @@ export function AdvancedSearch({
   prompts,
   onSearchSuggestionClick,
 }: AdvancedSearchProps) {
-  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+  const [inputValue, setInputValue] = useState(searchQuery);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const debouncedSearch = useDebounce(inputValue, 300);
 
-  // Mock search suggestions - in a real app, these would come from user behavior
-  const popularSearches = [
-    "blog post",
-    "react component",
-    "product description",
-    "marketing copy",
-    "code generation",
-    "creative writing",
-  ];
+  const normalizedPrompts = useMemo(() =>
+    prompts.map((prompt) => {
+      const tagNames = (prompt.tags || [])
+        .map((tagEntry) => {
+          if ("tag" in tagEntry && tagEntry.tag) {
+            return tagEntry.tag.name;
+          }
+          if ("name" in tagEntry) {
+            return tagEntry.name;
+          }
+          return "";
+        })
+        .filter(Boolean);
 
-  // Debounce search input
+      const categoryName = typeof prompt.category === "string"
+        ? prompt.category
+        : prompt.category?.name ?? "";
+
+      return {
+        ...prompt,
+        tagNames,
+        categoryName,
+      };
+    })
+  , [prompts]);
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(searchQuery);
-      if (searchQuery.trim()) {
-        onSearchChange(searchQuery);
-      }
-    }, 300);
+    setInputValue(searchQuery);
+  }, [searchQuery]);
 
-    return () => clearTimeout(timer);
-  }, [searchQuery, onSearchChange]);
+  useEffect(() => {
+    onSearchChange(debouncedSearch.trim());
+  }, [debouncedSearch, onSearchChange]);
 
-  // Generate search suggestions based on current input
   const generateSuggestions = useCallback((): SearchSuggestion[] => {
     const suggestions: SearchSuggestion[] = [];
-    const query = searchQuery.toLowerCase().trim();
+    const query = inputValue.toLowerCase().trim();
 
     if (!query) {
-      // Show recent and popular searches when query is empty
-      recentSearches.slice(0, 3).forEach(search => {
+      recentSearches.slice(0, 3).forEach((search) => {
         suggestions.push({ text: search, type: "recent" });
       });
-      
-      popularSearches.slice(0, 3).forEach(search => {
+
+      POPULAR_SEARCHES.slice(0, 3).forEach((search) => {
         if (!recentSearches.includes(search)) {
           suggestions.push({ text: search, type: "popular" });
         }
       });
-      
+
       return suggestions;
     }
 
-    // Find matching prompts
-    const matchingPrompts = prompts.filter(prompt =>
-      prompt.title.toLowerCase().includes(query) ||
-      prompt.content.toLowerCase().includes(query) ||
-      prompt.description?.toLowerCase().includes(query) ||
-      prompt.tags.some(tag => tag.toLowerCase().includes(query)) ||
-      prompt.targetModel.toLowerCase().includes(query) ||
-      prompt.category.toLowerCase().includes(query)
-    ).slice(0, 5);
+    const matchingPrompts = normalizedPrompts
+      .filter((prompt) =>
+        prompt.title.toLowerCase().includes(query) ||
+        prompt.content.toLowerCase().includes(query) ||
+        prompt.description?.toLowerCase().includes(query) ||
+        prompt.tagNames.some((tag) => tag.toLowerCase().includes(query)) ||
+        prompt.targetModel.toLowerCase().includes(query) ||
+        prompt.categoryName.toLowerCase().includes(query)
+      )
+      .slice(0, 5);
 
-    matchingPrompts.forEach(prompt => {
+    matchingPrompts.forEach((prompt) => {
       suggestions.push({
         text: prompt.title,
         type: "suggestion",
@@ -108,12 +131,13 @@ export function AdvancedSearch({
       });
     });
 
-    // Add matching tags
     const matchingTags = Array.from(
-      new Set(prompts.flatMap(p => p.tags))
-    ).filter(tag => tag.toLowerCase().includes(query)).slice(0, 3);
+      new Set(normalizedPrompts.flatMap((p) => p.tagNames))
+    )
+      .filter((tag) => tag.toLowerCase().includes(query))
+      .slice(0, 3);
 
-    matchingTags.forEach(tag => {
+    matchingTags.forEach((tag) => {
       suggestions.push({
         text: tag,
         type: "suggestion",
@@ -121,19 +145,19 @@ export function AdvancedSearch({
     });
 
     return suggestions;
-  }, [searchQuery, prompts, recentSearches]);
+  }, [inputValue, normalizedPrompts, recentSearches]);
 
   const suggestions = generateSuggestions();
 
-  const handleSearchSubmit = (query: string = searchQuery) => {
-    if (query.trim()) {
-      // Add to recent searches
-      setRecentSearches(prev => {
-        const updated = [query, ...prev.filter(s => s !== query)];
-        return updated.slice(0, 10); // Keep only last 10 searches
+  const handleSearchSubmit = (query: string = inputValue) => {
+    const normalizedQuery = query.trim();
+    if (normalizedQuery) {
+      setRecentSearches((prev) => {
+        const updated = [normalizedQuery, ...prev.filter((s) => s !== normalizedQuery)];
+        return updated.slice(0, 10);
       });
-      
-      onSearchChange(query);
+
+      onSearchChange(normalizedQuery);
       setShowSuggestions(false);
       setIsSearchFocused(false);
     }
@@ -141,12 +165,13 @@ export function AdvancedSearch({
 
   const handleSuggestionClick = (suggestion: SearchSuggestion) => {
     const query = suggestion.prompt ? suggestion.prompt.title : suggestion.text;
-    onSearchChange(query);
+    setInputValue(query);
     handleSearchSubmit(query);
     onSearchSuggestionClick?.(query);
   };
 
   const clearSearch = () => {
+    setInputValue("");
     onSearchChange("");
     setIsSearchFocused(false);
     setShowSuggestions(false);
@@ -163,16 +188,18 @@ export function AdvancedSearch({
 
   const highlightMatch = (text: string, query: string) => {
     if (!query) return text;
-    
+
     const regex = new RegExp(`(${query})`, "gi");
     const parts = text.split(regex);
-    
-    return parts.map((part, index) => 
+
+    return parts.map((part, index) =>
       regex.test(part) ? (
         <span key={index} className="bg-yellow-200 dark:bg-yellow-800 font-semibold">
           {part}
         </span>
-      ) : part
+      ) : (
+        part
+      )
     );
   };
 
@@ -182,14 +209,13 @@ export function AdvancedSearch({
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Search prompts by title, content, tags, or model..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
           onFocus={() => {
             setIsSearchFocused(true);
             setShowSuggestions(true);
           }}
           onBlur={() => {
-            // Delay hiding suggestions to allow clicking on them
             setTimeout(() => {
               setShowSuggestions(false);
             }, 200);
@@ -197,7 +223,7 @@ export function AdvancedSearch({
           onKeyDown={handleKeyPress}
           className="w-64 pl-10 pr-10"
         />
-        {searchQuery && (
+        {inputValue && (
           <Button
             variant="ghost"
             size="sm"
@@ -209,28 +235,26 @@ export function AdvancedSearch({
         )}
       </div>
 
-      {/* Search Suggestions Dropdown */}
       {isSearchFocused && showSuggestions && suggestions.length > 0 && (
         <Popover open={true}>
           <PopoverTrigger asChild>
             <div className="absolute top-full left-0 right-0 z-50 mt-1" />
           </PopoverTrigger>
-          <PopoverContent 
-            className="w-80 p-0" 
+          <PopoverContent
+            className="w-80 p-0"
             align="start"
             onOpenAutoFocus={(e) => e.preventDefault()}
           >
             <ScrollArea className="max-h-80">
               <div className="p-2">
-                {/* Recent Searches */}
-                {suggestions.filter(s => s.type === "recent").length > 0 && (
+                {suggestions.filter((s) => s.type === "recent").length > 0 && (
                   <div className="mb-4">
                     <div className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-muted-foreground">
                       <Clock className="h-3 w-3" />
                       Recent Searches
                     </div>
                     {suggestions
-                      .filter(s => s.type === "recent")
+                      .filter((s) => s.type === "recent")
                       .map((suggestion, index) => (
                         <button
                           key={`recent-${index}`}
@@ -238,87 +262,73 @@ export function AdvancedSearch({
                           className="w-full flex items-center gap-2 px-2 py-2 text-sm text-left rounded-md hover:bg-muted transition-colors"
                         >
                           <Search className="h-3 w-3 text-muted-foreground" />
-                          {highlightMatch(suggestion.text, searchQuery)}
+                          <span>{suggestion.text}</span>
                         </button>
                       ))}
                   </div>
                 )}
 
-                {/* Popular Searches */}
-                {suggestions.filter(s => s.type === "popular").length > 0 && (
+                <Separator className="my-2" />
+
+                {suggestions.filter((s) => s.type === "popular").length > 0 && (
                   <div className="mb-4">
                     <div className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-muted-foreground">
                       <TrendingUp className="h-3 w-3" />
                       Popular Searches
                     </div>
-                    {suggestions
-                      .filter(s => s.type === "popular")
-                      .map((suggestion, index) => (
-                        <button
-                          key={`popular-${index}`}
-                          onClick={() => handleSuggestionClick(suggestion)}
-                          className="w-full flex items-center gap-2 px-2 py-2 text-sm text-left rounded-md hover:bg-muted transition-colors"
-                        >
-                          <TrendingUp className="h-3 w-3 text-muted-foreground" />
-                          {highlightMatch(suggestion.text, searchQuery)}
-                        </button>
-                      ))}
-                  </div>
-                )}
-
-                {/* Prompt Suggestions */}
-                {suggestions.filter(s => s.type === "suggestion" && s.prompt).length > 0 && (
-                  <div className="mb-4">
-                    <div className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-muted-foreground">
-                      <Search className="h-3 w-3" />
-                      Matching Prompts
+                    <div className="flex flex-wrap gap-2 px-2 py-2">
+                      {suggestions
+                        .filter((s) => s.type === "popular")
+                        .map((suggestion, index) => (
+                          <Badge
+                            key={`popular-${index}`}
+                            variant="secondary"
+                            className="cursor-pointer"
+                            onClick={() => handleSuggestionClick(suggestion)}
+                          >
+                            {suggestion.text}
+                          </Badge>
+                        ))}
                     </div>
-                    {suggestions
-                      .filter(s => s.type === "suggestion" && s.prompt)
-                      .map((suggestion, index) => (
-                        <button
-                          key={`prompt-${index}`}
-                          onClick={() => handleSuggestionClick(suggestion)}
-                          className="w-full text-left p-2 rounded-md hover:bg-muted transition-colors"
-                        >
-                          <div className="text-sm font-medium mb-1">
-                            {highlightMatch(suggestion.prompt.title, searchQuery)}
-                          </div>
-                          <div className="text-xs text-muted-foreground line-clamp-2">
-                            {suggestion.prompt.description || suggestion.prompt.content.substring(0, 100)}...
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline" className="text-xs">
-                              {suggestion.prompt.targetModel}
-                            </Badge>
-                            <Badge variant="secondary" className="text-xs">
-                              {suggestion.prompt.category}
-                            </Badge>
-                          </div>
-                        </button>
-                      ))}
                   </div>
                 )}
 
-                {/* Tag Suggestions */}
-                {suggestions.filter(s => s.type === "suggestion" && !s.prompt).length > 0 && (
+                <Separator className="my-2" />
+
+                {suggestions.filter((s) => s.type === "suggestion").length > 0 && (
                   <div>
                     <div className="flex items-center gap-2 px-2 py-1 text-xs font-medium text-muted-foreground">
                       <Filter className="h-3 w-3" />
-                      Matching Tags
+                      Suggestions
                     </div>
-                    <div className="flex flex-wrap gap-1 p-2">
+                    <div className="space-y-1">
                       {suggestions
-                        .filter(s => s.type === "suggestion" && !s.prompt)
+                        .filter((s) => s.type === "suggestion")
                         .map((suggestion, index) => (
-                          <Badge
-                            key={`tag-${index}`}
-                            variant="outline"
-                            className="text-xs cursor-pointer hover:bg-muted"
+                          <button
+                            key={`suggestion-${index}`}
                             onClick={() => handleSuggestionClick(suggestion)}
+                            className="w-full text-left px-2 py-2 rounded-md hover:bg-muted transition-colors"
                           >
-                            #{highlightMatch(suggestion.text, searchQuery)}
-                          </Badge>
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">
+                                {highlightMatch(suggestion.text, inputValue)}
+                              </span>
+                              {suggestion.prompt && suggestion.prompt.categoryName && (
+                                <Badge variant="outline" className="ml-2 text-xs">
+                                  {suggestion.prompt.categoryName}
+                                </Badge>
+                              )}
+                            </div>
+                            {suggestion.prompt && (
+                              <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                                {highlightMatch(
+                                  suggestion.prompt.content,
+                                  inputValue
+                                )}
+                              </p>
+                            )}
+                          </button>
                         ))}
                     </div>
                   </div>
@@ -327,15 +337,6 @@ export function AdvancedSearch({
             </ScrollArea>
           </PopoverContent>
         </Popover>
-      )}
-
-      {/* Search Status */}
-      {debouncedSearch && (
-        <div className="absolute top-full left-0 right-0 mt-1">
-          <div className="text-xs text-muted-foreground bg-background border rounded px-2 py-1">
-            Searching for: "{debouncedSearch}"
-          </div>
-        </div>
       )}
     </div>
   );
