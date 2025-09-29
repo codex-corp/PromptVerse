@@ -1,141 +1,75 @@
-# 🚀 Welcome to Z.ai Code Scaffold
+# PromptVerse
 
-A modern, production-ready web application scaffold powered by cutting-edge technologies, designed to accelerate your development with [Z.ai](https://chat.z.ai)'s AI-powered coding assistance.
+PromptVerse is an open-source workspace for discovering, organizing, and transforming AI prompts. It combines a polished Next.js interface with a Prisma-backed API so teams can build, iterate, and share prompt libraries with confidence.
 
-## ✨ Technology Stack
+## ✨ Highlights
+- **Rich prompt management** – curate prompts with categories, tags, favorites, and version history.
+- **Database-backed workflows** – create, edit, clone, and rate prompts with real Prisma models.
+- **Lightning-fast discovery** – advanced filtering and live search keep the right prompt a keystroke away.
+- **Built-in transformer** – open the transformer window from anywhere with <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd>.
+- **Offline-ready PWA** – install PromptVerse as a desktop experience on Windows 11 or any modern browser.
+- **Dark mode design system** – accessible theming tuned for productive day and night work.
 
-This scaffold provides a robust foundation built with:
-
-### 🎯 Core Framework
-- **⚡ Next.js 15** - The React framework for production with App Router
-- **📘 TypeScript 5** - Type-safe JavaScript for better developer experience
-- **🎨 Tailwind CSS 4** - Utility-first CSS framework for rapid UI development
-
-### 🧩 UI Components & Styling
-- **🧩 shadcn/ui** - High-quality, accessible components built on Radix UI
-- **🎯 Lucide React** - Beautiful & consistent icon library
-- **🌈 Framer Motion** - Production-ready motion library for React
-- **🎨 Next Themes** - Perfect dark mode in 2 lines of code
-
-### 📋 Forms & Validation
-- **🎣 React Hook Form** - Performant forms with easy validation
-- **✅ Zod** - TypeScript-first schema validation
-
-### 🔄 State Management & Data Fetching
-- **🐻 Zustand** - Simple, scalable state management
-- **🔄 TanStack Query** - Powerful data synchronization for React
-- **🌐 Axios** - Promise-based HTTP client
-
-### 🗄️ Database & Backend
-- **🗄️ Prisma** - Next-generation Node.js and TypeScript ORM
-- **🔐 NextAuth.js** - Complete open-source authentication solution
-
-### 🎨 Advanced UI Features
-- **📊 TanStack Table** - Headless UI for building tables and datagrids
-- **🖱️ DND Kit** - Modern drag and drop toolkit for React
-- **📊 Recharts** - Redefined chart library built with React and D3
-- **🖼️ Sharp** - High performance image processing
-
-### 🌍 Internationalization & Utilities
-- **🌍 Next Intl** - Internationalization library for Next.js
-- **📅 Date-fns** - Modern JavaScript date utility library
-- **🪝 ReactUse** - Collection of essential React hooks for modern development
-
-## 🎯 Why This Scaffold?
-
-- **🏎️ Fast Development** - Pre-configured tooling and best practices
-- **🎨 Beautiful UI** - Complete shadcn/ui component library with advanced interactions
-- **🔒 Type Safety** - Full TypeScript configuration with Zod validation
-- **📱 Responsive** - Mobile-first design principles with smooth animations
-- **🗄️ Database Ready** - Prisma ORM configured for rapid backend development
-- **🔐 Auth Included** - NextAuth.js for secure authentication flows
-- **📊 Data Visualization** - Charts, tables, and drag-and-drop functionality
-- **🌍 i18n Ready** - Multi-language support with Next Intl
-- **🚀 Production Ready** - Optimized build and deployment settings
-- **🤖 AI-Friendly** - Structured codebase perfect for AI assistance
-
-## 🚀 Quick Start
+## 🚀 Getting Started
 
 ```bash
 # Install dependencies
 npm install
 
-# Start development server
+# Sync the database schema
+npm run db:push
+
+# Seed sample data (optional)
+npm run db:seed
+
+# Start the development server with Node + Next.js
 npm run dev
-
-# Build for production
-npm run build
-
-# Start production server
-npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to see your application running.
+Open [http://localhost:3000](http://localhost:3000) and log in with your Prisma user data to explore the workspace.
 
-## 🤖 Powered by Z.ai
+## 📦 Install as an App
+1. Launch PromptVerse in Microsoft Edge, Chrome, or another PWA-capable browser.
+2. Click **Install App** in the top toolbar (or use your browser's install option).
+3. Follow the prompts to pin PromptVerse to your Start menu or taskbar.
 
-This scaffold is optimized for use with [Z.ai](https://chat.z.ai) - your AI assistant for:
+> The install experience uses a Progressive Web App manifest and service worker, so PromptVerse keeps working even when your network drops.
 
-- **💻 Code Generation** - Generate components, pages, and features instantly
-- **🎨 UI Development** - Create beautiful interfaces with AI assistance  
-- **🔧 Bug Fixing** - Identify and resolve issues with intelligent suggestions
-- **📝 Documentation** - Auto-generate comprehensive documentation
-- **🚀 Optimization** - Performance improvements and best practices
+## 🧠 Core Features
+- **Prompt library** – read, favorite, and rate prompts, with author attribution and usage stats.
+- **Advanced search** – filter by category, model, tags, rating, favorites, and date range.
+- **Prompt creation** – capture structured metadata and persist it instantly to the database.
+- **Version manager** – clone prompts, record version notes, and evolve prompts safely.
+- **Prompt transformer** – send prompts through the `/api/transform-prompt` endpoint for automated refinement.
 
-Ready to build something amazing? Start chatting with Z.ai at [chat.z.ai](https://chat.z.ai) and experience the future of AI-powered development!
+## 🛠️ Tech Stack
+- **Framework**: Next.js 15 (App Router) + TypeScript 5 + React 19
+- **Styling**: Tailwind CSS 4 + shadcn/ui + Lucide icons
+- **State & Forms**: React Hook Form, Zustand, TanStack Query
+- **Backend**: Prisma ORM, REST APIs, Socket.IO ready server bootstrap
+- **Content Tools**: MDX Editor, React Markdown, Syntax Highlighter
+- **Testing & Quality**: ESLint, TypeScript strictness, automated builds
 
-## 📁 Project Structure
-
+## 🧭 Project Structure
 ```
 src/
-├── app/                 # Next.js App Router pages
-├── components/          # Reusable React components
-│   └── ui/             # shadcn/ui components
-├── hooks/              # Custom React hooks
-└── lib/                # Utility functions and configurations
+├── app/                 # App Router routes, API handlers, and layout
+├── components/          # Reusable UI, including shadcn/ui primitives
+├── hooks/               # Custom React hooks
+├── lib/                 # Utilities, Prisma client, socket helpers
+└── prisma/              # Schema, migrations, and seeds
 ```
 
-## 🎨 Available Features & Components
+## 🤝 Contributing
+1. Fork the repository and create a branch: `git checkout -b feature/amazing-idea`
+2. Install dependencies and ensure the database is running.
+3. Run `npm run lint` and `npm run build` before submitting your pull request.
+4. Open a PR describing your changes and link any relevant issues.
 
-This scaffold includes a comprehensive set of modern web development tools:
+We welcome issues, feature ideas, and documentation updates from the community.
 
-### 🧩 UI Components (shadcn/ui)
-- **Layout**: Card, Separator, Aspect Ratio, Resizable Panels
-- **Forms**: Input, Textarea, Select, Checkbox, Radio Group, Switch
-- **Feedback**: Alert, Toast (Sonner), Progress, Skeleton
-- **Navigation**: Breadcrumb, Menubar, Navigation Menu, Pagination
-- **Overlay**: Dialog, Sheet, Popover, Tooltip, Hover Card
-- **Data Display**: Badge, Avatar, Calendar
+## 📄 License
+PromptVerse is released under the [MIT License](LICENSE). Feel free to use it in your own projects or adapt it for your team.
 
-### 📊 Advanced Data Features
-- **Tables**: Powerful data tables with sorting, filtering, pagination (TanStack Table)
-- **Charts**: Beautiful visualizations with Recharts
-- **Forms**: Type-safe forms with React Hook Form + Zod validation
-
-### 🎨 Interactive Features
-- **Animations**: Smooth micro-interactions with Framer Motion
-- **Drag & Drop**: Modern drag-and-drop functionality with DND Kit
-- **Theme Switching**: Built-in dark/light mode support
-
-### 🔐 Backend Integration
-- **Authentication**: Ready-to-use auth flows with NextAuth.js
-- **Database**: Type-safe database operations with Prisma
-- **API Client**: HTTP requests with Axios + TanStack Query
-- **State Management**: Simple and scalable with Zustand
-
-### 🌍 Production Features
-- **Internationalization**: Multi-language support with Next Intl
-- **Image Optimization**: Automatic image processing with Sharp
-- **Type Safety**: End-to-end TypeScript with Zod validation
-- **Essential Hooks**: 100+ useful React hooks with ReactUse for common patterns
-
-## 🤝 Get Started with Z.ai
-
-1. **Clone this scaffold** to jumpstart your project
-2. **Visit [chat.z.ai](https://chat.z.ai)** to access your AI coding assistant
-3. **Start building** with intelligent code generation and assistance
-4. **Deploy with confidence** using the production-ready setup
-
----
-
-Built with ❤️ for the developer community. Supercharged by [Z.ai](https://chat.z.ai) 🚀
+## 🌐 Community
+Have a question or want to share how you're using PromptVerse? Open a discussion or join the conversation in the issue tracker. Let's build a richer prompt ecosystem together!
