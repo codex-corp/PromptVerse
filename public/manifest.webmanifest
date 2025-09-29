@@ -1,0 +1,17 @@
+{
+  "name": "PromptVerse",
+  "short_name": "PromptVerse",
+  "description": "An open-source hub for discovering, curating, and transforming AI prompts.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/logo.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

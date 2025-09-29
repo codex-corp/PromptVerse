@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
         where: { userId },
         include: {
           prompt: {
-            select: { id: true, title, targetModel }
+            select: { id: true, title: true, targetModel: true }
           }
         },
         orderBy: {
