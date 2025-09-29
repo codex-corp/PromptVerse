@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
@@ -18,41 +19,29 @@ export async function GET(request: NextRequest) {
 
     if (includeCounts) {
       // Get tags with prompt counts
-      const tags = await db.tag.findMany({
-        where,
-        include: {
-          _count: {
-            select: {
-              prompts: true
-            }
-          }
-        },
-        orderBy: [
-          {
-            prompts: {
-              _count: "desc"
-            }
-          },
-          {
-            name: "asc"
-          }
-        ]
-      });
+      const tags = db
+        .prepare(`
+          SELECT t.id, t.name, t.color, t.createdAt, t.updatedAt,
+                 COUNT(pt.id) AS count
+          FROM Tag t
+          LEFT JOIN prompt_tags pt ON pt.tagId = t.id
+          WHERE (? = '' OR t.name LIKE ?)
+          GROUP BY t.id
+          ORDER BY count DESC, t.name ASC
+        `)
+        .all(search, `%${search}%`);
 
-      const tagsWithCounts = tags.map(tag => ({
-        ...tag,
-        count: tag._count.prompts
-      }));
-
-      return NextResponse.json(tagsWithCounts);
+      return NextResponse.json(tags);
     } else {
       // Get simple tags list
-      const tags = await db.tag.findMany({
-        where,
-        orderBy: {
-          name: "asc"
-        }
-      });
+      const tags = db
+        .prepare(`
+          SELECT id, name, color, createdAt, updatedAt
+          FROM Tag
+          WHERE (? = '' OR name LIKE ?)
+          ORDER BY name ASC
+        `)
+        .all(search, `%${search}%`);
 
       return NextResponse.json(tags);
     }
@@ -78,9 +67,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if tag already exists
-    const existingTag = await db.tag.findUnique({
-      where: { name }
-    });
+    const existingTag = db
+      .prepare("SELECT id FROM Tag WHERE name = ?")
+      .get(name);
 
     if (existingTag) {
       return NextResponse.json(
@@ -89,12 +78,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const newTag = await db.tag.create({
-      data: {
-        name,
-        color
-      }
-    });
+    const now = new Date().toISOString();
+    const id = randomUUID();
+
+    db.prepare(
+      `INSERT INTO Tag (id, name, color, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(id, name, color ?? null, now, now);
+
+    const newTag = db
+      .prepare(
+        "SELECT id, name, color, createdAt, updatedAt FROM Tag WHERE id = ?"
+      )
+      .get(id);
 
     return NextResponse.json(newTag, { status: 201 });
   } catch (error) {

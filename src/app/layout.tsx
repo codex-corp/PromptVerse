@@ -1,35 +1,43 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { ServiceWorkerRegister } from "@/components/service-worker-register";
 
 export const metadata: Metadata = {
-  title: "Z.ai Code Scaffold - AI-Powered Development",
-  description: "Modern Next.js scaffold optimized for AI-powered development with Z.ai. Built with TypeScript, Tailwind CSS, and shadcn/ui.",
-  keywords: ["Z.ai", "Next.js", "TypeScript", "Tailwind CSS", "shadcn/ui", "AI development", "React"],
-  authors: [{ name: "Z.ai Team" }],
+  title: "PromptVerse | Open-Source Prompt Management",
+  description: "PromptVerse is the open-source hub for discovering, curating, and transforming AI prompts across your favorite models.",
+  applicationName: "PromptVerse",
+  keywords: [
+    "prompt management",
+    "AI prompts",
+    "PromptVerse",
+    "Next.js",
+    "open source",
+    "prompt library",
+  ],
+  authors: [{ name: "PromptVerse Community" }],
   openGraph: {
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
-    url: "https://chat.z.ai",
-    siteName: "Z.ai",
+    title: "PromptVerse",
+    description: "Organize and share AI prompts with the open-source PromptVerse platform.",
+    url: "https://promptverse.app",
+    siteName: "PromptVerse",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
+    title: "PromptVerse",
+    description: "Open-source prompt management for creators and teams.",
   },
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [{ url: "/logo.svg", type: "image/svg+xml" }],
+    shortcut: ["/logo.svg"],
+    apple: [{ url: "/logo.svg" }],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
 };
 
 export default function RootLayout({
@@ -39,11 +47,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground dark`}
-      >
+      <body className="font-sans antialiased bg-background text-foreground dark">
         {children}
         <Toaster />
+        <ServiceWorkerRegister />
       </body>
     </html>
   );

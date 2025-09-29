@@ -1,19 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { PromptForm } from "@/components/prompt-form";
 import { FilterPanel } from "@/components/filter-panel";
-import { RatingComponent, RatingDistribution } from "@/components/rating-component";
+import { RatingComponent } from "@/components/rating-component";
 import { AdvancedSearch } from "@/components/advanced-search";
 import { VersionManager } from "@/components/version-manager";
 import { PromptTransformer } from "@/components/prompt-transformer";
+import { PWAInstallButton } from "@/components/pwa-install-button";
 import { 
   Search, 
   Plus, 
@@ -35,8 +35,8 @@ interface Prompt {
   description?: string;
   targetModel: string;
   category?: { id: string; name: string; color?: string };
-  tags: Array<{ tag: { id: string; name: string; color?: string } }>;
-  rating: number;
+  tags?: Array<{ tag: { id: string; name: string; color?: string } }>;
+  averageRating: number;
   totalRatings: number;
   userRating?: number;
   userComment?: string;
@@ -77,7 +77,6 @@ interface Category {
 
 export default function PromptVerse() {
   const [selectedPrompt, setSelectedPrompt] = useState<Prompt | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -97,6 +96,25 @@ export default function PromptVerse() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [defaultUser, setDefaultUser] = useState<{ id: string; name: string; email: string } | null>(null);
+
+  const fetchDefaultUser = useCallback(async () => {
+    try {
+      const response = await fetch("/api/users?limit=1");
+      if (!response.ok) {
+        throw new Error("Failed to fetch users");
+      }
+
+      const data = await response.json();
+      const firstUser = data.users?.[0] ?? null;
+      setDefaultUser(firstUser);
+      return firstUser as { id: string; name: string; email: string } | null;
+    } catch (err) {
+      console.error("Error fetching default user:", err);
+      setDefaultUser(null);
+      return null;
+    }
+  }, []);
 
   // Fetch prompts from API
   const fetchPrompts = async () => {
@@ -119,7 +137,11 @@ export default function PromptVerse() {
       }
       
       const data = await response.json();
-      setPrompts(data.prompts || []);
+      const normalized = (data.prompts || []).map((prompt: any) => ({
+        ...prompt,
+        tags: prompt.tags ?? [],
+      }));
+      setPrompts(normalized);
     } catch (err) {
       console.error("Error fetching prompts:", err);
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -167,6 +189,10 @@ export default function PromptVerse() {
     fetchCategories();
   }, []);
 
+  useEffect(() => {
+    fetchDefaultUser();
+  }, [fetchDefaultUser]);
+
   // Fetch prompts when filters change
   useEffect(() => {
     fetchPrompts();
@@ -180,7 +206,7 @@ export default function PromptVerse() {
 
   // Generate available tags and models for filter panel
   const allTags = prompts.reduce((acc, prompt) => {
-    prompt.tags.forEach((tagObj) => {
+    (prompt.tags ?? []).forEach((tagObj) => {
       const tag = tagObj.tag.name;
       const existing = acc.find(t => t.name === tag);
       if (existing) {
@@ -193,6 +219,9 @@ export default function PromptVerse() {
   }, [] as Array<{ name: string; count: number }>);
 
   const allModels = prompts.reduce((acc, prompt) => {
+    if (!prompt.targetModel) {
+      return acc;
+    }
     const existing = acc.find(m => m.name === prompt.targetModel);
     if (existing) {
       existing.count++;
@@ -204,26 +233,34 @@ export default function PromptVerse() {
 
   const handleCreatePrompt = async (data: any) => {
     try {
+      const author = defaultUser ?? (await fetchDefaultUser());
+      if (!author) {
+        throw new Error("No default author available");
+      }
+
+      const payload = {
+        ...data,
+        categoryId: data.categoryId || undefined,
+        tags: (data.tags || []).filter((tag: string) => tag.trim().length > 0),
+        authorId: author.id,
+      };
+
       const response = await fetch("/api/prompts", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          ...data,
-          authorId: "1", // Use the first user's ID from the seed data
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
         throw new Error("Failed to create prompt");
       }
 
-      await fetchPrompts(); // Refresh the prompts list
+      await fetchPrompts();
       setIsCreateDialogOpen(false);
     } catch (error) {
       console.error("Error creating prompt:", error);
-      // You could show an error message to the user here
     }
   };
 
@@ -231,12 +268,18 @@ export default function PromptVerse() {
     if (!selectedPrompt) return;
     
     try {
+      const payload = {
+        ...data,
+        categoryId: data.categoryId || undefined,
+        tags: (data.tags || []).filter((tag: string) => tag.trim().length > 0),
+      };
+
       const response = await fetch(`/api/prompts/${selectedPrompt.id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -264,6 +307,11 @@ export default function PromptVerse() {
     updates: any;
   }) => {
     try {
+      const author = defaultUser ?? (await fetchDefaultUser());
+      if (!author) {
+        throw new Error("No default author available");
+      }
+
       const response = await fetch("/api/prompts", {
         method: "POST",
         headers: {
@@ -272,7 +320,7 @@ export default function PromptVerse() {
         body: JSON.stringify({
           ...cloneData.updates,
           title: cloneData.title,
-          authorId: "1", // In a real app, this would come from authentication
+          authorId: author.id,
         }),
       });
 
@@ -300,7 +348,6 @@ export default function PromptVerse() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ...prompt,
           isFavorite: !prompt.isFavorite,
         }),
       });
@@ -317,6 +364,11 @@ export default function PromptVerse() {
 
   const handleRatingChange = async (promptId: string, rating: number, comment?: string) => {
     try {
+      const author = defaultUser ?? (await fetchDefaultUser());
+      if (!author) {
+        throw new Error("No default user available for rating");
+      }
+
       const response = await fetch("/api/ratings", {
         method: "POST",
         headers: {
@@ -325,7 +377,7 @@ export default function PromptVerse() {
         body: JSON.stringify({
           value: rating,
           comment,
-          userId: "1", // In a real app, this would come from authentication
+          userId: author.id,
           promptId,
         }),
       });
@@ -352,7 +404,7 @@ export default function PromptVerse() {
           <div className="ml-auto flex items-center space-x-4">
             <AdvancedSearch
               searchQuery={filters.search}
-              onSearchChange={(query) => setFilters({...filters, search: query})}
+              onSearchChange={(query) => setFilters(prev => ({ ...prev, search: query }))}
               prompts={filteredPrompts}
             />
             <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
@@ -368,6 +420,7 @@ export default function PromptVerse() {
               availableTags={allTags}
               availableModels={allModels}
             />
+            <PWAInstallButton className="items-start" />
             <Button variant="outline" size="sm">
               <Settings className="h-4 w-4" />
             </Button>
@@ -491,7 +544,7 @@ export default function PromptVerse() {
                                   )}
                                   <RatingComponent
                                     promptId={prompt.id}
-                                    currentRating={prompt.rating}
+                                    currentRating={prompt.averageRating}
                                     totalRatings={prompt.totalRatings}
                                     isFavorite={prompt.isFavorite}
                                     onRatingChange={handleRatingChange}
@@ -568,7 +621,7 @@ export default function PromptVerse() {
                         <div>
                           <h3 className="text-sm font-medium mb-2">Tags</h3>
                           <div className="flex flex-wrap gap-2">
-                            {selectedPrompt.tags.map((tagObj: { tag: { id: string; name: string; color?: string } }) => (
+                            {(selectedPrompt.tags ?? []).map((tagObj: { tag: { id: string; name: string; color?: string } }) => (
                               <Badge key={tagObj.tag.id} variant="secondary" className="text-xs">
                                 <Tag className="h-3 w-3 mr-1" />
                                 {tagObj.tag.name}
@@ -582,7 +635,7 @@ export default function PromptVerse() {
                           <h3 className="text-sm font-medium mb-2">Rating & Favorites</h3>
                           <RatingComponent
                             promptId={selectedPrompt.id}
-                            currentRating={selectedPrompt.rating}
+                            currentRating={selectedPrompt.averageRating}
                             totalRatings={selectedPrompt.totalRatings}
                             isFavorite={selectedPrompt.isFavorite}
                             onRatingChange={handleRatingChange}
@@ -712,7 +765,7 @@ export default function PromptVerse() {
                   <div>
                     <h3 className="text-sm font-medium mb-2">Tags</h3>
                     <div className="flex flex-wrap gap-2">
-                      {selectedPrompt.tags.map((tagObj: { tag: { id: string; name: string; color?: string } }) => (
+                      {(selectedPrompt.tags ?? []).map((tagObj: { tag: { id: string; name: string; color?: string } }) => (
                         <Badge key={tagObj.tag.id} variant="secondary" className="text-xs">
                           <Tag className="h-3 w-3 mr-1" />
                           {tagObj.tag.name}
@@ -726,7 +779,7 @@ export default function PromptVerse() {
                     <h3 className="text-sm font-medium mb-2">Rating & Favorites</h3>
                     <RatingComponent
                       promptId={selectedPrompt.id}
-                      currentRating={selectedPrompt.rating}
+                      currentRating={selectedPrompt.averageRating}
                       totalRatings={selectedPrompt.totalRatings}
                       isFavorite={selectedPrompt.isFavorite}
                       onRatingChange={handleRatingChange}
@@ -806,7 +859,8 @@ export default function PromptVerse() {
             frequencyPenalty: selectedPrompt.frequencyPenalty,
             presencePenalty: selectedPrompt.presencePenalty,
             notes: selectedPrompt.notes,
-            tags: selectedPrompt.tags,
+            categoryId: selectedPrompt.category?.id,
+            tags: (selectedPrompt.tags ?? []).map((tag) => tag.tag.name),
           }}
           categories={categories.filter(c => c.id !== "all").map(c => ({ id: c.id, name: c.name }))}
         />
