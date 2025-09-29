@@ -13,6 +13,7 @@ import { RatingComponent } from "@/components/rating-component";
 import { AdvancedSearch } from "@/components/advanced-search";
 import { VersionManager } from "@/components/version-manager";
 import { PromptTransformer } from "@/components/prompt-transformer";
+import { PWAInstallButton } from "@/components/pwa-install-button";
 import { 
   Search, 
   Plus, 
@@ -419,6 +420,7 @@ export default function PromptVerse() {
               availableTags={allTags}
               availableModels={allModels}
             />
+            <PWAInstallButton className="items-start" />
             <Button variant="outline" size="sm">
               <Settings className="h-4 w-4" />
             </Button>
