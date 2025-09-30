@@ -1,3 +1,4 @@
+// app/page.tsx
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
@@ -15,18 +16,35 @@ import { VersionManager } from "@/components/version-manager";
 import { PromptTransformer } from "@/components/prompt-transformer";
 import { PWAInstallButton } from "@/components/pwa-install-button";
 import {
-    Search,
-    Plus,
-    Star,
-    Heart,
-    Copy,
     Filter,
     Folder,
     Tag,
-    Settings,
     BookOpen,
-    Zap
+    Zap,
+    Layers,
+    Edit3,
+    Star as StarIcon,
+    Copy as CopyIcon,
+    Code,
+    FileText,
+    Trash2 as Trash2Icon,
+    ChevronDown as ChevronDownIcon,
+    Menu as MenuIcon,
+    User as UserIcon,
+    Eye as EyeIcon,
+    Code as CodeIcon,
+    FileText as FileTextIcon,
+    GitBranch as GitBranchIcon,
+    RotateCcw as RotateCcwIcon, PlusIcon, Wand2, UploadIcon, SettingsIcon, DownloadIcon
+
 } from "lucide-react";
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { useToast } from "@/hooks/use-toast";
 
 interface Prompt {
     id: string;
@@ -83,6 +101,8 @@ export default function PromptVerse() {
     const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
     const [isTransformerOpen, setIsTransformerOpen] = useState(false);
     const [initialDataForCreate, setInitialDataForCreate] = useState<any | undefined>(undefined);
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [isMobile, setIsMobile] = useState(false);
 
     const handleAddToPrompts = (data: any) => {
         setInitialDataForCreate({
@@ -193,10 +213,10 @@ export default function PromptVerse() {
             setCategories([
                 { id: "all", name: "All Prompts", count: 0, icon: BookOpen },
                 { id: "marketing", name: "Marketing", count: 0, icon: Zap },
-                { id: "code", name: "Code Generation", count: 0, icon: Copy },
-                { id: "creative", name: "Creative Writing", count: 0, icon: Star },
+                { id: "code", name: "Code Generation", count: 0, icon: Code },
+                { id: "creative", name: "Creative Writing", count: 0, icon: FileText },
                 { id: "analysis", name: "Analysis", count: 0, icon: Filter },
-                { id: "business", name: "Business", count: 0, icon: Folder },
+                { id: "business", name: "Business", count: 0, icon: Layers },
             ]);
         }
     }, []);
@@ -215,6 +235,22 @@ export default function PromptVerse() {
     useEffect(() => {
         fetchPrompts();
     }, [fetchPrompts]);
+
+    // Handle responsive layout
+    useEffect(() => {
+        const checkMobile = () => {
+            setIsMobile(window.innerWidth < 768);
+            if (window.innerWidth < 768) {
+                setSidebarOpen(false);
+            } else {
+                setSidebarOpen(true);
+            }
+        };
+
+        checkMobile();
+        window.addEventListener("resize", checkMobile);
+        return () => window.removeEventListener("resize", checkMobile);
+    }, []);
 
     // Filter prompts based on selected category (from left panel)
     const filteredPrompts = useMemo(() => {
@@ -401,6 +437,63 @@ export default function PromptVerse() {
         }
     };
 
+    const { toast } = useToast();
+
+    const handleCopyPrompt = (content: string) => {
+        navigator.clipboard.writeText(content).then(() => {
+            toast({
+                title: "Copied to clipboard!",
+                description: "The prompt content has been copied to your clipboard."
+            });
+        });
+    };
+
+    const handleDeletePrompt = async (promptId: string) => {
+        try {
+            const response = await fetch(`/api/prompts/${promptId}`, {
+                method: "DELETE",
+            });
+
+            if (!response.ok) {
+                throw new Error("Failed to delete prompt");
+            }
+
+            await fetchPrompts(); // Refresh the prompts list
+            toast({
+                title: "Prompt deleted",
+                description: "The prompt has been successfully deleted."
+            });
+        } catch (error) {
+            console.error("Error deleting prompt:", error);
+            toast({
+                title: "Error",
+                description: "Failed to delete the prompt.",
+                variant: "destructive"
+            });
+        }
+    };
+
+    const handleCardClick = useCallback(async (prompt: Prompt) => {
+        setSelectedPrompt(prompt);
+        try {
+            const response = await fetch(`/api/prompts/${prompt.id}`,
+                {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({ viewCount: prompt.viewCount + 1 }),
+                });
+            if (!response.ok) {
+                throw new Error("Failed to update view count");
+            }
+            // Optimistically update the UI
+            setPrompts(prompts.map(p => p.id === prompt.id ? { ...p, viewCount: p.viewCount + 1 } : p));
+        } catch (error) {
+            console.error("Error updating view count:", error);
+        }
+    }, [prompts]);
+
     // Memoized category options for mobile dropdown
     const categoryOptions = useMemo(() => {
         return categories.map((category) => {
@@ -416,71 +509,109 @@ export default function PromptVerse() {
     // Memoized prompt list items
     const promptListItems = useMemo(() => {
         return filteredPrompts.map((prompt) => (
-            <Card
-                key={prompt.id}
-                className={`cursor-pointer transition-colors hover:bg-muted/50 ${selectedPrompt?.id === prompt.id ? "ring-2 ring-primary" : ""}`}
-                onClick={() => setSelectedPrompt(prompt)}
-            >
-                <CardContent className="p-4">
-                    <div className="flex items-start justify-between space-x-3">
-                        <div className="flex-1 min-w-0">
-                            <div className="flex items-center space-x-2 mb-2">
-                                <h3 className="font-medium text-sm truncate">
-                                    {prompt.title}
-                                </h3>
+            <ContextMenu key={prompt.id}>
+                <ContextMenuTrigger>
+                    <Card
+                        className={`cursor-pointer transition-all hover:shadow-md hover:ring-1 hover:ring-primary/30 ${selectedPrompt?.id === prompt.id ? "ring-2 ring-primary bg-primary/5" : ""} mb-4`}>
+                        <CardContent className="p-4" onClick={() => handleCardClick(prompt)}>
+                            <div className="flex items-start justify-between space-x-3">
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center space-x-2 mb-2">
+                                        <h3 className="font-medium text-sm truncate">
+                                            {prompt.title}
+                                        </h3>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                                        {prompt.description || prompt.content.substring(0, 100)}...
+                                    </p>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <Badge variant="outline" className="text-xs">
+                                            {prompt.targetModel}
+                                        </Badge>
+                                        {prompt.category && (
+                                            <Badge variant="secondary" className="text-xs">
+                                                {prompt.category.name}
+                                            </Badge>
+                                        )}
+                                        <RatingComponent
+                                            promptId={prompt.id}
+                                            currentRating={prompt.averageRating}
+                                            totalRatings={prompt.totalRatings}
+                                            isFavorite={prompt.isFavorite}
+                                            onRatingChange={handleRatingChange}
+                                            onFavoriteToggle={handleToggleFavorite}
+                                            userRating={prompt.userRating}
+                                        />
+                                    </div>
+                                </div>
                             </div>
-                            <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-                                {prompt.description || prompt.content.substring(0, 100)}...
-                            </p>
-                            <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline" className="text-xs">
-                                    {prompt.targetModel}
-                                </Badge>
-                                {prompt.category && (
-                                    <Badge variant="secondary" className="text-xs">
-                                        {prompt.category.name}
-                                    </Badge>
-                                )}
-                                <RatingComponent
-                                    promptId={prompt.id}
-                                    currentRating={prompt.averageRating}
-                                    totalRatings={prompt.totalRatings}
-                                    isFavorite={prompt.isFavorite}
-                                    onRatingChange={handleRatingChange}
-                                    onFavoriteToggle={handleToggleFavorite}
-                                    userRating={prompt.userRating}
-                                />
+                            <Separator className="my-2" />
+                            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                <div className="flex items-center space-x-2">
+                                    <UserIcon className="h-3 w-3" />
+                                    <span>{prompt.author.name}</span>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <EyeIcon className="h-3 w-3" />
+                                    <span>{prompt.viewCount}</span>
+                                </div>
                             </div>
-                        </div>
-                    </div>
-                    <Separator className="my-2" />
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                        <span>by {prompt.author.name}</span>
-                        <span>{prompt.viewCount} views</span>
-                    </div>
-                </CardContent>
-            </Card>
+                        </CardContent>
+                    </Card>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                    <ContextMenuItem onClick={() => {
+                        setSelectedPrompt(prompt);
+                        setIsEditDialogOpen(true);
+                    }}>
+                        <Edit3 className="h-4 w-4 mr-2" />
+                        Edit
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => handleCopyPrompt(prompt.content)}>
+                        <CopyIcon className="h-4 w-4 mr-2" />
+                        Copy
+                    </ContextMenuItem>
+                    <ContextMenuItem onClick={() => handleDeletePrompt(prompt.id)}>
+                        <Trash2Icon className="h-4 w-4 mr-2" />
+                        Delete
+                    </ContextMenuItem>
+                </ContextMenuContent>
+            </ContextMenu>
         ));
-    }, [filteredPrompts, selectedPrompt, handleRatingChange, handleToggleFavorite]);
+    }, [filteredPrompts, selectedPrompt, handleRatingChange, handleToggleFavorite, handleCardClick]);
 
     return (
-        <div className="h-screen bg-background">
+        <div className="h-screen bg-background flex flex-col">
             {/* Header */}
             <div className="border-b bg-card">
-                <div className="flex h-16 items-center px-6">
-                    <div className="flex items-center space-x-4">
-                        <BookOpen className="h-6 w-6 text-primary" />
-                        <h1 className="text-xl font-semibold">PromptVerse</h1>
+                <div className="flex h-16 items-center px-4">
+                    <div className="flex items-center space-x-3">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => setSidebarOpen(!sidebarOpen)}
+                        >
+                            <MenuIcon className="h-5 w-5" />
+                        </Button>
+                        <div className="flex items-center space-x-2">
+                            <BookOpen className="h-6 w-6 text-primary" />
+                            <h1 className="text-xl font-semibold">PromptVerse</h1>
+                        </div>
                     </div>
-                    <div className="ml-auto flex items-center space-x-4">
+                    <div className="ml-auto flex items-center space-x-2">
                         <AdvancedSearch
                             searchQuery={filters.search}
                             onSearchChange={handleSearchChange}
                             prompts={filteredPrompts}
                         />
                         <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
-                            <Plus className="h-4 w-4 mr-2" />
+                            <PlusIcon className="h-4 w-4 mr-2" />
                             New Prompt
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => setIsTransformerOpen(true)}>
+                            <Wand2 className="h-4 w-4 mr-2" />
+                            Transform
                         </Button>
                         <FilterPanel
                             open={isFilterPanelOpen}
@@ -493,14 +624,14 @@ export default function PromptVerse() {
                         />
                         <PWAInstallButton className="items-start" />
                         <Button variant="outline" size="sm">
-                            <Settings className="h-4 w-4" />
+                            <SettingsIcon className="h-4 w-4" />
                         </Button>
                     </div>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col md:flex-row">
+            <div className="flex-1 flex overflow-hidden">
                 {/* Mobile First - Show Categories as Dropdown */}
                 <div className="md:hidden border-b bg-card p-4">
                     <select
@@ -512,59 +643,82 @@ export default function PromptVerse() {
                     </select>
                 </div>
 
-                <ResizablePanelGroup direction="horizontal" className="flex-1 hidden md:flex">
+                <ResizablePanelGroup direction="horizontal" className="flex-1">
                     {/* Left Panel - Categories (Hidden on Mobile) */}
-                    <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
-                        <Card className="h-full rounded-none border-0">
-                            <CardHeader className="pb-3">
-                                <CardTitle className="text-sm font-medium">Categories</CardTitle>
-                            </CardHeader>
-                            <CardContent className="p-0">
-                                <ScrollArea className="h-[calc(100vh-8rem)]">
-                                    <div className="space-y-1 p-3">
-                                        {categories.map((category) => {
-                                            const Icon = category.icon;
-                                            return (
-                                                <button
-                                                    key={category.id}
-                                                    onClick={() => setSelectedCategory(category.id)}
-                                                    className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition-colors ${
-                                                        selectedCategory === category.id
-                                                            ? "bg-primary text-primary-foreground"
-                                                            : "hover:bg-muted"
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center space-x-3">
-                                                        <Icon className="h-4 w-4" />
-                                                        <span className="text-sm font-medium">{category.name}</span>
-                                                    </div>
-                                                    <Badge variant="secondary" className="text-xs">
-                                                        {category.count}
-                                                    </Badge>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </ScrollArea>
-                            </CardContent>
-                        </Card>
-                    </ResizablePanel>
-
-                    <ResizableHandle withHandle />
+                    {sidebarOpen && (
+                        <>
+                            <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
+                                <Card className="h-full rounded-none border-0">
+                                    <CardHeader className="pb-3">
+                                        <CardTitle className="text-sm font-medium flex items-center justify-between">
+                                            <span>Categories</span>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-6 w-6"
+                                                onClick={() => setSidebarOpen(false)}
+                                            >
+                                                <ChevronDownIcon className="h-4 w-4 rotate-90" />
+                                            </Button>
+                                        </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="p-0">
+                                        <ScrollArea className="h-[calc(100vh-8rem)]">
+                                            <div className="space-y-1 p-3">
+                                                {categories.map((category) => {
+                                                    const Icon = category.icon;
+                                                    return (
+                                                        <button
+                                                            key={category.id}
+                                                            onClick={() => setSelectedCategory(category.id)}
+                                                            className={`w-full flex items-center justify-between p-2 rounded-lg text-left transition-colors ${
+                                                                selectedCategory === category.id
+                                                                    ? "bg-primary text-primary-foreground"
+                                                                    : "hover:bg-muted"
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center space-x-3">
+                                                                <Icon className="h-4 w-4" />
+                                                                <span className="text-sm font-medium">{category.name}</span>
+                                                            </div>
+                                                            <Badge variant="secondary" className="text-xs">
+                                                                {category.count}
+                                                            </Badge>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </ScrollArea>
+                                    </CardContent>
+                                </Card>
+                            </ResizablePanel>
+                            <ResizableHandle withHandle />
+                        </>
+                    )}
 
                     {/* Middle Panel - Prompt List */}
-                    <ResizablePanel defaultSize={35} minSize={25} maxSize={50}>
+                    <ResizablePanel defaultSize={sidebarOpen ? 35 : 50} minSize={25} maxSize={70}>
                         <Card className="h-full rounded-none border-0">
                             <CardHeader className="pb-3">
                                 <div className="flex items-center justify-between">
                                     <CardTitle className="text-sm font-medium">
                                         Prompts ({filteredPrompts.length})
                                     </CardTitle>
+                                    <div className="flex items-center space-x-2">
+                                        <Button variant="outline" size="sm">
+                                            <DownloadIcon className="h-4 w-4 mr-2" />
+                                            Export
+                                        </Button>
+                                        <Button variant="outline" size="sm">
+                                            <UploadIcon className="h-4 w-4 mr-2" />
+                                            Import
+                                        </Button>
+                                    </div>
                                 </div>
                             </CardHeader>
                             <CardContent className="p-0">
                                 <ScrollArea className="h-[calc(100vh-8rem)]">
-                                    <div className="space-y-2 p-3">
+                                    <div className="p-3">
                                         {loading ? (
                                             <div className="flex items-center justify-center h-32">
                                                 <div className="text-muted-foreground">Loading prompts...</div>
@@ -574,8 +728,18 @@ export default function PromptVerse() {
                                                 <div className="text-red-500">Error: {error}</div>
                                             </div>
                                         ) : filteredPrompts.length === 0 ? (
-                                            <div className="flex items-center justify-center h-32">
-                                                <div className="text-muted-foreground">No prompts found</div>
+                                            <div className="flex flex-col items-center justify-center h-32 text-center">
+                                                <FileTextIcon className="h-10 w-10 text-muted-foreground mb-2" />
+                                                <p className="text-sm text-muted-foreground">No prompts found</p>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="mt-2"
+                                                    onClick={() => setIsCreateDialogOpen(true)}
+                                                >
+                                                    <PlusIcon className="h-4 w-4 mr-2" />
+                                                    Create New Prompt
+                                                </Button>
                                             </div>
                                         ) : (
                                             promptListItems
@@ -589,7 +753,7 @@ export default function PromptVerse() {
                     <ResizableHandle withHandle />
 
                     {/* Right Panel - Prompt Details (Hidden on Mobile when not selected) */}
-                    <ResizablePanel defaultSize={45} minSize={25} maxSize={70} className="hidden md:flex">
+                    <ResizablePanel defaultSize={45} minSize={25} maxSize={70} className={isMobile && !selectedPrompt ? "hidden" : ""}>
                         <Card className="h-full rounded-none border-0">
                             {selectedPrompt ? (
                                 <>
@@ -606,8 +770,17 @@ export default function PromptVerse() {
                                                 <Button
                                                     variant="outline"
                                                     size="sm"
+                                                    onClick={() => handleCopyPrompt(selectedPrompt.content)}
+                                                >
+                                                    <CopyIcon className="h-4 w-4 mr-2" />
+                                                    Copy
+                                                </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
                                                     onClick={() => setIsEditDialogOpen(true)}
                                                 >
+                                                    <Edit3 className="h-4 w-4 mr-2" />
                                                     Edit
                                                 </Button>
                                             </div>
@@ -618,7 +791,10 @@ export default function PromptVerse() {
                                             <div className="space-y-6 p-6">
                                                 {/* Description */}
                                                 <div>
-                                                    <h3 className="text-sm font-medium mb-2">Description</h3>
+                                                    <h3 className="text-sm font-medium mb-2 flex items-center">
+                                                        <FileTextIcon className="h-4 w-4 mr-2" />
+                                                        Description
+                                                    </h3>
                                                     <p className="text-sm text-muted-foreground">
                                                         {selectedPrompt.description}
                                                     </p>
@@ -626,7 +802,10 @@ export default function PromptVerse() {
 
                                                 {/* Prompt Content */}
                                                 <div>
-                                                    <h3 className="text-sm font-medium mb-2">Prompt Content</h3>
+                                                    <h3 className="text-sm font-medium mb-2 flex items-center">
+                                                        <CodeIcon className="h-4 w-4 mr-2" />
+                                                        Prompt Content
+                                                    </h3>
                                                     <div className="bg-muted p-4 rounded-lg">
                             <pre className="text-sm whitespace-pre-wrap">
                               {selectedPrompt.content}
@@ -636,7 +815,10 @@ export default function PromptVerse() {
 
                                                 {/* Tags */}
                                                 <div>
-                                                    <h3 className="text-sm font-medium mb-2">Tags</h3>
+                                                    <h3 className="text-sm font-medium mb-2 flex items-center">
+                                                        <Tag className="h-4 w-4 mr-2" />
+                                                        Tags
+                                                    </h3>
                                                     <div className="flex flex-wrap gap-2">
                                                         {(selectedPrompt.tags ?? []).map((tagObj: { tag: { id: string; name: string; color?: string } }) => (
                                                             <Badge key={tagObj.tag.id} variant="secondary" className="text-xs">
@@ -649,7 +831,10 @@ export default function PromptVerse() {
 
                                                 {/* Rating and Favorites */}
                                                 <div>
-                                                    <h3 className="text-sm font-medium mb-2">Rating & Favorites</h3>
+                                                    <h3 className="text-sm font-medium mb-2 flex items-center">
+                                                        <StarIcon className="h-4 w-4 mr-2" />
+                                                        Rating & Favorites
+                                                    </h3>
                                                     <RatingComponent
                                                         promptId={selectedPrompt.id}
                                                         currentRating={selectedPrompt.averageRating}
@@ -665,7 +850,10 @@ export default function PromptVerse() {
 
                                                 {/* Parameters */}
                                                 <div>
-                                                    <h3 className="text-sm font-medium mb-2">Parameters</h3>
+                                                    <h3 className="text-sm font-medium mb-2 flex items-center">
+                                                        <SettingsIcon className="h-4 w-4 mr-2" />
+                                                        Parameters
+                                                    </h3>
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                         <div>
                                                             <span className="text-xs text-muted-foreground">Target Model</span>
@@ -697,7 +885,10 @@ export default function PromptVerse() {
                                                 {/* Notes */}
                                                 {selectedPrompt.notes && (
                                                     <div>
-                                                        <h3 className="text-sm font-medium mb-2">Notes</h3>
+                                                        <h3 className="text-sm font-medium mb-2 flex items-center">
+                                                            <FileTextIcon className="h-4 w-4 mr-2" />
+                                                            Notes
+                                                        </h3>
                                                         <p className="text-sm text-muted-foreground">
                                                             {selectedPrompt.notes}
                                                         </p>
@@ -706,7 +897,10 @@ export default function PromptVerse() {
 
                                                 {/* Metadata */}
                                                 <div>
-                                                    <h3 className="text-sm font-medium mb-2">Metadata</h3>
+                                                    <h3 className="text-sm font-medium mb-2 flex items-center">
+                                                        <UserIcon className="h-4 w-4 mr-2" />
+                                                        Metadata
+                                                    </h3>
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                                                         <div>
                                                             <span className="text-muted-foreground">Author:</span>
@@ -740,115 +934,6 @@ export default function PromptVerse() {
                         </Card>
                     </ResizablePanel>
                 </ResizablePanelGroup>
-
-                {/* Mobile Prompt Details Modal/Drawer */}
-                {selectedPrompt && (
-                    <div className="lg:hidden fixed inset-0 z-50 bg-background">
-                        <div className="h-full flex flex-col">
-                            {/* Mobile Header */}
-                            <div className="border-b p-4 flex items-center justify-between">
-                                <h2 className="text-lg font-semibold">{selectedPrompt.title}</h2>
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setSelectedPrompt(null)}
-                                >
-                                    ×
-                                </Button>
-                            </div>
-
-                            {/* Mobile Content */}
-                            <ScrollArea className="flex-1">
-                                <div className="space-y-6 p-4">
-                                    {/* Description */}
-                                    <div>
-                                        <h3 className="text-sm font-medium mb-2">Description</h3>
-                                        <p className="text-sm text-muted-foreground">
-                                            {selectedPrompt.description}
-                                        </p>
-                                    </div>
-
-                                    {/* Prompt Content */}
-                                    <div>
-                                        <h3 className="text-sm font-medium mb-2">Prompt Content</h3>
-                                        <div className="bg-muted p-4 rounded-lg">
-                      <pre className="text-sm whitespace-pre-wrap">
-                        {selectedPrompt.content}
-                      </pre>
-                                        </div>
-                                    </div>
-
-                                    {/* Tags */}
-                                    <div>
-                                        <h3 className="text-sm font-medium mb-2">Tags</h3>
-                                        <div className="flex flex-wrap gap-2">
-                                            {(selectedPrompt.tags ?? []).map((tagObj: { tag: { id: string; name: string; color?: string } }) => (
-                                                <Badge key={tagObj.tag.id} variant="secondary" className="text-xs">
-                                                    <Tag className="h-3 w-3 mr-1" />
-                                                    {tagObj.tag.name}
-                                                </Badge>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Rating and Favorites */}
-                                    <div>
-                                        <h3 className="text-sm font-medium mb-2">Rating & Favorites</h3>
-                                        <RatingComponent
-                                            promptId={selectedPrompt.id}
-                                            currentRating={selectedPrompt.averageRating}
-                                            totalRatings={selectedPrompt.totalRatings}
-                                            isFavorite={selectedPrompt.isFavorite}
-                                            onRatingChange={handleRatingChange}
-                                            onFavoriteToggle={handleToggleFavorite}
-                                            userRating={selectedPrompt.userRating}
-                                            userComment={selectedPrompt.userComment}
-                                            showDetails={true}
-                                        />
-                                    </div>
-
-                                    {/* Parameters */}
-                                    <div>
-                                        <h3 className="text-sm font-medium mb-2">Parameters</h3>
-                                        <div className="grid grid-cols-1 gap-4">
-                                            <div>
-                                                <span className="text-xs text-muted-foreground">Target Model</span>
-                                                <p className="text-sm font-medium">{selectedPrompt.targetModel}</p>
-                                            </div>
-                                            <div>
-                                                <span className="text-xs text-muted-foreground">Temperature</span>
-                                                <p className="text-sm font-medium">{selectedPrompt.temperature}</p>
-                                            </div>
-                                            <div>
-                                                <span className="text-xs text-muted-foreground">Max Tokens</span>
-                                                <p className="text-sm font-medium">{selectedPrompt.maxTokens}</p>
-                                            </div>
-                                            <div>
-                                                <span className="text-xs text-muted-foreground">Top P</span>
-                                                <p className="text-sm font-medium">{selectedPrompt.topP}</p>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Mobile Action Buttons */}
-                                    <div className="flex flex-col gap-2 pt-4 border-t">
-                                        <VersionManager
-                                            prompt={selectedPrompt}
-                                            onClone={handleVersionClone}
-                                        />
-                                        <Button
-                                            variant="outline"
-                                            onClick={() => setIsEditDialogOpen(true)}
-                                            className="w-full"
-                                        >
-                                            Edit Prompt
-                                        </Button>
-                                    </div>
-                                </div>
-                            </ScrollArea>
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* Create Prompt Dialog */}
@@ -893,7 +978,8 @@ export default function PromptVerse() {
             <PromptTransformer
                 open={isTransformerOpen}
                 onOpenChange={setIsTransformerOpen}
-                onAddToPrompts={handleAddToPrompts}
+                authorId={defaultUser?.id ?? null}
+                onPromptAdded={fetchPrompts}
             />
         </div>
     );
