@@ -1,3 +1,4 @@
+// components/version-manager.tsx
 "use client";
 
 import { useState, useMemo } from "react";
@@ -24,7 +25,55 @@ import {
     ArrowRight,
     CheckCircle,
     AlertCircle,
-    X
+    X,
+    FileText,
+    Settings,
+    Zap,
+    MoreHorizontal,
+    Pencil,
+    Trash2,
+    Copy as CopyIcon,
+    Share2,
+    Archive,
+    ArchiveX,
+    Star,
+    StarOff,
+    Heart,
+    HeartOff,
+    Menu,
+    ChevronDown,
+    Layers,
+    Eye,
+    Download,
+    Upload,
+    Search,
+    Filter,
+    Plus,
+    Pencil as PencilIcon,
+    Trash2 as Trash2Icon,
+    Share2 as Share2Icon,
+    Archive as ArchiveIcon,
+    ArchiveX as ArchiveXIcon,
+    Star as StarIcon,
+    StarOff as StarOffIcon,
+    Heart as HeartIcon,
+    HeartOff as HeartOffIcon,
+    MoreHorizontal as MoreHorizontalIcon,
+    Menu as MenuIcon,
+    ChevronDown as ChevronDownIcon,
+    Layers as LayersIcon,
+    Clock as ClockIcon,
+    User as UserIcon,
+    Eye as EyeIcon,
+    Download as DownloadIcon,
+    Upload as UploadIcon,
+    Search as SearchIcon,
+    Filter as FilterIcon,
+    Settings as SettingsIcon,
+    Plus as PlusIcon,
+    FileText as FileTextIcon,
+    GitBranch as GitBranchIcon,
+    RotateCcw as RotateCcwIcon,
 } from "lucide-react";
 
 interface Version {
@@ -173,14 +222,14 @@ export function VersionManager({
         <Dialog open={isCloneDialogOpen} onOpenChange={setIsCloneDialogOpen}>
             <DialogTrigger asChild>
                 <Button variant="outline" size="sm">
-                    <Copy className="h-4 w-4 mr-2" />
+                    <CopyIcon className="h-4 w-4 mr-2" />
                     Clone Version
                 </Button>
             </DialogTrigger>
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                        <GitBranch className="h-5 w-5" />
+                        <GitBranchIcon className="h-5 w-5" />
                         Clone Prompt
                     </DialogTitle>
                     <DialogDescription>
@@ -301,7 +350,7 @@ export function VersionManager({
             {/* Version History */}
             <div className="space-y-3">
                 <h4 className="text-sm font-medium flex items-center gap-2">
-                    <GitBranch className="h-4 w-4" />
+                    <GitBranchIcon className="h-4 w-4" />
                     Version History ({prompt.versions?.length || 0})
                 </h4>
 
@@ -318,11 +367,11 @@ export function VersionManager({
                                         </div>
                                         <div className="text-xs text-muted-foreground space-y-1">
                                             <div className="flex items-center space-x-1">
-                                                <User className="h-3 w-3" />
+                                                <UserIcon className="h-3 w-3" />
                                                 <span>{currentVersion.author}</span>
                                             </div>
                                             <div className="flex items-center space-x-1">
-                                                <Clock className="h-3 w-3" />
+                                                <ClockIcon className="h-3 w-3" />
                                                 <span>{formatDate(currentVersion.createdAt)}</span>
                                             </div>
                                         </div>
@@ -354,11 +403,11 @@ export function VersionManager({
                                         </div>
                                         <div className="text-xs text-muted-foreground space-y-1">
                                             <div className="flex items-center space-x-1">
-                                                <User className="h-3 w-3" />
+                                                <UserIcon className="h-3 w-3" />
                                                 <span>{version.author}</span>
                                             </div>
                                             <div className="flex items-center space-x-1">
-                                                <Clock className="h-3 w-3" />
+                                                <ClockIcon className="h-3 w-3" />
                                                 <span>{formatDate(version.createdAt)}</span>
                                             </div>
                                             {version.versionNote && (
