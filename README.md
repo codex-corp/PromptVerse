@@ -1,10 +1,10 @@
 # PromptVerse
 
-PromptVerse is an open-source workspace for discovering, organizing, and transforming AI prompts. It combines a polished Next.js interface with a Prisma-backed API so teams can build, iterate, and share prompt libraries with confidence.
+PromptVerse is an open-source workspace for discovering, organizing, and transforming AI prompts. It combines a polished Next.js interface with a SQLite-backed API so teams can build, iterate, and share prompt libraries with confidence.
 
 ## ✨ Highlights
 - **Rich prompt management** – curate prompts with categories, tags, favorites, and version history.
-- **Database-backed workflows** – create, edit, clone, and rate prompts with real Prisma models.
+- **Database-backed workflows** – create, edit, clone, and rate prompts stored in a shared SQLite catalog.
 - **Lightning-fast discovery** – advanced filtering and live search keep the right prompt a keystroke away.
 - **Built-in transformer** – open the transformer window from anywhere with <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd>.
 - **Offline-ready PWA** – install PromptVerse as a desktop experience on Windows 11 or any modern browser.
@@ -16,9 +16,6 @@ PromptVerse is an open-source workspace for discovering, organizing, and transfo
 # Install dependencies
 npm install
 
-# Sync the database schema
-npm run db:push
-
 # Seed sample data (optional)
 npm run db:seed
 
@@ -26,7 +23,7 @@ npm run db:seed
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and log in with your Prisma user data to explore the workspace.
+Open [http://localhost:3000](http://localhost:3000) and explore the seeded workspace or connect your own SQLite database by updating `DATABASE_URL`.
 
 ## 🔌 Configure the Transformer Provider
 
@@ -65,7 +62,7 @@ base URL, so both local and remote deployments work without code changes.
 - **Framework**: Next.js 15 (App Router) + TypeScript 5 + React 19
 - **Styling**: Tailwind CSS 4 + shadcn/ui + Lucide icons
 - **State & Forms**: React Hook Form, Zustand, TanStack Query
-- **Backend**: Prisma ORM, REST APIs, Socket.IO ready server bootstrap
+- **Backend**: SQLite + better-sqlite3 data layer, REST APIs, Socket.IO ready server bootstrap
 - **Content Tools**: MDX Editor, React Markdown, Syntax Highlighter
 - **Testing & Quality**: ESLint, TypeScript strictness, automated builds
 
@@ -75,8 +72,8 @@ src/
 ├── app/                 # App Router routes, API handlers, and layout
 ├── components/          # Reusable UI, including shadcn/ui primitives
 ├── hooks/               # Custom React hooks
-├── lib/                 # Utilities, Prisma client, socket helpers
-└── prisma/              # Schema, migrations, and seeds
+├── lib/                 # Utilities, SQLite data helpers, socket helpers
+└── scripts/             # Database seed utilities
 ```
 
 ## 🤝 Contributing

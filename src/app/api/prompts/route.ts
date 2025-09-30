@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import {
+  createPrompt,
+  fetchPrompts,
+  PromptFilterOptions,
+} from "@/lib/prompt-repository";
 
 export async function GET(request: NextRequest) {
   try {
@@ -20,140 +25,23 @@ export async function GET(request: NextRequest) {
     const sortOrder = searchParams.get("sortOrder") || "desc";
 
     // Build where clause for filtering
-    const where: any = {};
-    
-    if (search) {
-      where.OR = [
-        { title: { contains: search } },
-        { content: { contains: search } },
-        { description: { contains: search } },
-      ];
-    }
-    
-    if (categories.length > 0) {
-      where.categoryId = { in: categories };
-    }
-    
-    if (tags.length > 0) {
-      where.tags = {
-        some: {
-          tag: {
-            name: { in: tags }
-          }
-        }
-      };
-    }
-    
-    if (targetModels.length > 0) {
-      where.targetModel = { in: targetModels };
-    }
-    
-    if (rating !== null) {
-      where.ratings = {
-        some: {
-          value: { gte: rating }
-        }
-      };
-    }
-    
-    if (isFavorite !== null) {
-      where.isFavorite = isFavorite;
-    }
-    
-    // Date range filtering
-    if (dateRange !== "all") {
-      const now = new Date();
-      let startDate = new Date();
-      
-      switch (dateRange) {
-        case "today":
-          startDate.setHours(0, 0, 0, 0);
-          break;
-        case "week":
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case "month":
-          startDate.setMonth(now.getMonth() - 1);
-          break;
-        case "year":
-          startDate.setFullYear(now.getFullYear() - 1);
-          break;
-      }
-      
-      where.createdAt = { gte: startDate };
-    }
+    const options: PromptFilterOptions = {
+      search,
+      categories,
+      tags,
+      targetModels,
+      rating,
+      isFavorite,
+      dateRange: dateRange as PromptFilterOptions["dateRange"],
+      page,
+      limit,
+      sortBy,
+      sortOrder: sortOrder as PromptFilterOptions["sortOrder"],
+    };
 
-    // Calculate pagination
-    const skip = (page - 1) * limit;
+    const result = fetchPrompts(options);
 
-    // Build order by clause
-    const orderBy: any = {};
-    orderBy[sortBy] = sortOrder;
-
-    // Fetch prompts with related data
-    const [prompts, totalCount] = await Promise.all([
-      db.prompt.findMany({
-        where,
-        include: {
-          author: {
-            select: { id: true, name: true, email: true }
-          },
-          category: {
-            select: { id: true, name: true, color: true }
-          },
-          tags: {
-            include: {
-              tag: {
-                select: { id: true, name: true, color: true }
-              }
-            }
-          },
-          ratings: {
-            select: { id: true, value: true, comment: true, createdAt: true, userId: true }
-          },
-          versions: {
-            orderBy: { createdAt: "desc" },
-            take: 1,
-            select: { id: true, versionNote: true, createdAt: true }
-          },
-          _count: {
-            select: {
-              ratings: true,
-              versions: true
-            }
-          }
-        },
-        orderBy,
-        skip,
-        take: limit
-      }),
-      db.prompt.count({ where })
-    ]);
-
-    // Calculate average rating for each prompt
-    const promptsWithRatings = prompts.map(prompt => {
-      const ratings = prompt.ratings.map(r => r.value);
-      const averageRating = ratings.length > 0 
-        ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length 
-        : 0;
-      
-      return {
-        ...prompt,
-        averageRating: Math.round(averageRating * 10) / 10, // Round to 1 decimal
-        totalRatings: ratings.length,
-        userRating: prompt.ratings.find(r => r.userId)?.value || null
-      };
-    });
-
-    return NextResponse.json({
-      prompts: promptsWithRatings,
-      pagination: {
-        page,
-        limit,
-        total: totalCount,
-        pages: Math.ceil(totalCount / limit)
-      }
-    });
+    return NextResponse.json(result);
   } catch (error) {
     console.error("Error fetching prompts:", error);
     return NextResponse.json(
@@ -190,68 +78,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create the prompt
-    const newPrompt = await db.prompt.create({
-      data: {
-        title,
-        content,
-        description,
-        targetModel,
-        temperature: temperature ? parseFloat(temperature) : null,
-        maxTokens: maxTokens ? parseInt(maxTokens) : null,
-        topP: topP ? parseFloat(topP) : null,
-        frequencyPenalty: frequencyPenalty ? parseFloat(frequencyPenalty) : null,
-        presencePenalty: presencePenalty ? parseFloat(presencePenalty) : null,
-        notes,
-        categoryId,
-        authorId,
-        tags: tags ? {
-          create: tags.map((tagName: string) => ({
-            tag: {
-              connectOrCreate: {
-                where: { name: tagName },
-                create: { name: tagName }
-              }
-            }
-          }))
-        } : undefined
-      },
-      include: {
-        author: {
-          select: { id: true, name: true, email: true }
-        },
-        category: {
-          select: { id: true, name: true, color: true }
-        },
-        tags: {
-          include: {
-            tag: {
-              select: { id: true, name: true, color: true }
-            }
-          }
-        }
-      }
+    const author = db
+      .prepare("SELECT id FROM User WHERE id = ?")
+      .get(authorId);
+
+    if (!author) {
+      return NextResponse.json(
+        { error: "Author not found" },
+        { status: 404 }
+      );
+    }
+
+    const created = createPrompt({
+      title,
+      content,
+      description,
+      targetModel,
+      temperature: temperature ? parseFloat(temperature) : null,
+      maxTokens: maxTokens ? parseInt(maxTokens, 10) : null,
+      topP: topP ? parseFloat(topP) : null,
+      frequencyPenalty: frequencyPenalty ? parseFloat(frequencyPenalty) : null,
+      presencePenalty: presencePenalty ? parseFloat(presencePenalty) : null,
+      notes,
+      categoryId,
+      authorId,
+      tags,
     });
 
-    // Create initial version
-    await db.promptVersion.create({
-      data: {
-        title,
-        content,
-        description,
-        targetModel,
-        temperature: temperature ? parseFloat(temperature) : null,
-        maxTokens: maxTokens ? parseInt(maxTokens) : null,
-        topP: topP ? parseFloat(topP) : null,
-        frequencyPenalty: frequencyPenalty ? parseFloat(frequencyPenalty) : null,
-        presencePenalty: presencePenalty ? parseFloat(presencePenalty) : null,
-        notes,
-        versionNote: "Initial version",
-        originalPromptId: newPrompt.id
-      }
-    });
-
-    return NextResponse.json(newPrompt, { status: 201 });
+    return NextResponse.json(created, { status: 201 });
   } catch (error) {
     console.error("Error creating prompt:", error);
     return NextResponse.json(

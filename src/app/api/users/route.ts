@@ -7,15 +7,17 @@ export async function GET(request: NextRequest) {
     const limitParam = searchParams.get("limit");
     const limit = limitParam ? Math.max(1, parseInt(limitParam, 10)) : undefined;
 
-    const users = await db.user.findMany({
-      take: limit,
-      orderBy: { createdAt: "asc" },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-      },
-    });
+    const baseQuery = `
+      SELECT id, name, email
+      FROM User
+      ORDER BY datetime(createdAt) ASC
+    `;
+
+    const stmt = limit
+      ? db.prepare(`${baseQuery} LIMIT ?`)
+      : db.prepare(baseQuery);
+
+    const users = limit ? stmt.all(limit) : stmt.all();
 
     return NextResponse.json({ users });
   } catch (error) {

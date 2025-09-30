@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import {
+  deletePrompt,
+  fetchPromptById,
+  updatePrompt,
+} from "@/lib/prompt-repository";
 
 export async function GET(
   request: NextRequest,
@@ -8,40 +12,7 @@ export async function GET(
   try {
     const { id } = params;
 
-    const prompt = await db.prompt.findUnique({
-      where: { id },
-      include: {
-        author: {
-          select: { id: true, name: true, email: true }
-        },
-        category: {
-          select: { id: true, name: true, color: true }
-        },
-        tags: {
-          include: {
-            tag: {
-              select: { id: true, name: true, color: true }
-            }
-          }
-        },
-        ratings: {
-          include: {
-            user: {
-              select: { id: true, name: true }
-            }
-          },
-          orderBy: { createdAt: "desc" }
-        },
-        versions: {
-          orderBy: { createdAt: "desc" },
-          include: {
-            originalPrompt: {
-              select: { id: true, title }
-            }
-          }
-        }
-      }
-    });
+    const prompt = fetchPromptById(id);
 
     if (!prompt) {
       return NextResponse.json(
@@ -50,17 +21,7 @@ export async function GET(
       );
     }
 
-    // Calculate average rating
-    const ratings = prompt.ratings.map(r => r.value);
-    const averageRating = ratings.length > 0 
-      ? ratings.reduce((sum, rating) => sum + rating, 0) / ratings.length 
-      : 0;
-
-    return NextResponse.json({
-      ...prompt,
-      averageRating: Math.round(averageRating * 10) / 10,
-      totalRatings: ratings.length
-    });
+    return NextResponse.json(prompt);
   } catch (error) {
     console.error("Error fetching prompt:", error);
     return NextResponse.json(
@@ -93,93 +54,36 @@ export async function PUT(
       isFavorite
     } = body;
 
-    // Check if prompt exists
-    const existingPrompt = await db.prompt.findUnique({
-      where: { id },
-      include: { tags: true }
+    const updated = updatePrompt(id, {
+      title,
+      content,
+      description,
+      targetModel,
+      temperature: temperature !== undefined && temperature !== null ? parseFloat(temperature) : undefined,
+      maxTokens: maxTokens !== undefined && maxTokens !== null ? parseInt(maxTokens, 10) : undefined,
+      topP: topP !== undefined && topP !== null ? parseFloat(topP) : undefined,
+      frequencyPenalty:
+        frequencyPenalty !== undefined && frequencyPenalty !== null
+          ? parseFloat(frequencyPenalty)
+          : undefined,
+      presencePenalty:
+        presencePenalty !== undefined && presencePenalty !== null
+          ? parseFloat(presencePenalty)
+          : undefined,
+      notes,
+      categoryId,
+      tags,
+      isFavorite,
     });
 
-    if (!existingPrompt) {
+    if (!updated) {
       return NextResponse.json(
         { error: "Prompt not found" },
         { status: 404 }
       );
     }
 
-    // Update the prompt
-    const updatedPrompt = await db.prompt.update({
-      where: { id },
-      data: {
-        title: title ?? existingPrompt.title,
-        content: content ?? existingPrompt.content,
-        description: description ?? existingPrompt.description,
-        targetModel: targetModel ?? existingPrompt.targetModel,
-        temperature: temperature !== undefined ? parseFloat(temperature) : existingPrompt.temperature,
-        maxTokens: maxTokens !== undefined ? parseInt(maxTokens) : existingPrompt.maxTokens,
-        topP: topP !== undefined ? parseFloat(topP) : existingPrompt.topP,
-        frequencyPenalty: frequencyPenalty !== undefined ? parseFloat(frequencyPenalty) : existingPrompt.frequencyPenalty,
-        presencePenalty: presencePenalty !== undefined ? parseFloat(presencePenalty) : existingPrompt.presencePenalty,
-        notes: notes ?? existingPrompt.notes,
-        categoryId: categoryId ?? existingPrompt.categoryId,
-        isFavorite: isFavorite ?? existingPrompt.isFavorite,
-        tags: tags ? {
-          // Remove existing tags
-          deleteMany: {},
-          // Add new tags
-          create: tags.map((tagName: string) => ({
-            tag: {
-              connectOrCreate: {
-                where: { name: tagName },
-                create: { name: tagName }
-              }
-            }
-          }))
-        } : undefined
-      },
-      include: {
-        author: {
-          select: { id: true, name: true, email: true }
-        },
-        category: {
-          select: { id: true, name: true, color: true }
-        },
-        tags: {
-          include: {
-            tag: {
-              select: { id: true, name: true, color: true }
-            }
-          }
-        }
-      }
-    });
-
-    // Create a new version if significant changes were made
-    const significantChanges = 
-      title !== existingPrompt.title ||
-      content !== existingPrompt.content ||
-      description !== existingPrompt.description ||
-      targetModel !== existingPrompt.targetModel;
-
-    if (significantChanges) {
-      await db.promptVersion.create({
-        data: {
-          title: updatedPrompt.title,
-          content: updatedPrompt.content,
-          description: updatedPrompt.description,
-          targetModel: updatedPrompt.targetModel,
-          temperature: updatedPrompt.temperature,
-          maxTokens: updatedPrompt.maxTokens,
-          topP: updatedPrompt.topP,
-          frequencyPenalty: updatedPrompt.frequencyPenalty,
-          presencePenalty: updatedPrompt.presencePenalty,
-          notes: updatedPrompt.notes,
-          versionNote: "Updated prompt",
-          originalPromptId: id
-        }
-      });
-    }
-
-    return NextResponse.json(updatedPrompt);
+    return NextResponse.json(updated);
   } catch (error) {
     console.error("Error updating prompt:", error);
     return NextResponse.json(
@@ -196,22 +100,14 @@ export async function DELETE(
   try {
     const { id } = params;
 
-    // Check if prompt exists
-    const existingPrompt = await db.prompt.findUnique({
-      where: { id }
-    });
+    const removed = deletePrompt(id);
 
-    if (!existingPrompt) {
+    if (!removed) {
       return NextResponse.json(
         { error: "Prompt not found" },
         { status: 404 }
       );
     }
-
-    // Delete the prompt (cascade will handle related records)
-    await db.prompt.delete({
-      where: { id }
-    });
 
     return NextResponse.json({ message: "Prompt deleted successfully" });
   } catch (error) {

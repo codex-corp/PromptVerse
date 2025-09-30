@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 
 export async function GET(request: NextRequest) {
@@ -8,37 +9,34 @@ export async function GET(request: NextRequest) {
 
     if (includeCounts) {
       // Get categories with prompt counts
-      const categories = await db.category.findMany({
-        include: {
-          _count: {
-            select: {
-              prompts: true
-            }
-          }
-        },
-        orderBy: {
-          name: "asc"
-        }
-      });
+      const categories = db
+        .prepare(`
+          SELECT c.id, c.name, c.description, c.color, c.createdAt, c.updatedAt,
+                 COUNT(p.id) AS count
+          FROM Category c
+          LEFT JOIN prompts p ON p.categoryId = c.id
+          GROUP BY c.id
+          ORDER BY c.name ASC
+        `)
+        .all();
 
-      const totalPrompts = await db.prompt.count();
-
-      const categoriesWithCounts = categories.map(category => ({
-        ...category,
-        count: category._count.prompts
-      }));
+      const totalPrompts = db
+        .prepare("SELECT COUNT(*) as total FROM prompts")
+        .get().total as number;
 
       return NextResponse.json({
-        categories: categoriesWithCounts,
+        categories,
         total: totalPrompts
       });
     } else {
       // Get simple categories list
-      const categories = await db.category.findMany({
-        orderBy: {
-          name: "asc"
-        }
-      });
+      const categories = db
+        .prepare(`
+          SELECT id, name, description, color, createdAt, updatedAt
+          FROM Category
+          ORDER BY name ASC
+        `)
+        .all();
 
       return NextResponse.json(categories);
     }
@@ -64,9 +62,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if category already exists
-    const existingCategory = await db.category.findUnique({
-      where: { name }
-    });
+    const existingCategory = db
+      .prepare("SELECT id FROM Category WHERE name = ?")
+      .get(name);
 
     if (existingCategory) {
       return NextResponse.json(
@@ -75,13 +73,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const newCategory = await db.category.create({
-      data: {
-        name,
-        description,
-        color
-      }
-    });
+    const now = new Date().toISOString();
+    const id = randomUUID();
+
+    db.prepare(
+      `INSERT INTO Category (id, name, description, color, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(id, name, description ?? null, color ?? null, now, now);
+
+    const newCategory = db
+      .prepare(
+        "SELECT id, name, description, color, createdAt, updatedAt FROM Category WHERE id = ?"
+      )
+      .get(id);
 
     return NextResponse.json(newCategory, { status: 201 });
   } catch (error) {

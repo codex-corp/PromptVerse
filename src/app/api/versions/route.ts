@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import {
+  createPromptVersion,
+  fetchPromptById,
+  fetchPromptVersions,
+} from "@/lib/prompt-repository";
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,14 +33,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if original prompt exists
-    const originalPrompt = await db.prompt.findUnique({
-      where: { id: originalPromptId },
-      include: {
-        author: {
-          select: { id: true, name: true }
-        }
-      }
-    });
+    const originalPrompt = fetchPromptById(originalPromptId);
 
     if (!originalPrompt) {
       return NextResponse.json(
@@ -45,23 +42,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create the new version
-    const newVersion = await db.promptVersion.create({
-      data: {
-        title,
-        content,
-        description,
-        targetModel,
-        temperature: temperature ? parseFloat(temperature) : null,
-        maxTokens: maxTokens ? parseInt(maxTokens) : null,
-        topP: topP ? parseFloat(topP) : null,
-        frequencyPenalty: frequencyPenalty ? parseFloat(frequencyPenalty) : null,
-        presencePenalty: presencePenalty ? parseFloat(presencePenalty) : null,
-        notes,
-        versionNote: versionNote || "Cloned version",
-        originalPromptId
-      }
+    const newVersion = createPromptVersion({
+      originalPromptId,
+      title,
+      content,
+      description,
+      targetModel,
+      temperature: temperature ? parseFloat(temperature) : null,
+      maxTokens: maxTokens ? parseInt(maxTokens, 10) : null,
+      topP: topP ? parseFloat(topP) : null,
+      frequencyPenalty: frequencyPenalty ? parseFloat(frequencyPenalty) : null,
+      presencePenalty: presencePenalty ? parseFloat(presencePenalty) : null,
+      notes,
+      versionNote,
     });
+
+    if (!newVersion) {
+      return NextResponse.json(
+        { error: "Original prompt not found" },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json(newVersion, { status: 201 });
   } catch (error) {
@@ -80,17 +81,7 @@ export async function GET(request: NextRequest) {
 
     if (originalPromptId) {
       // Get versions for a specific prompt
-      const versions = await db.promptVersion.findMany({
-        where: { originalPromptId },
-        include: {
-          originalPrompt: {
-            select: { id: true, title }
-          }
-        },
-        orderBy: {
-          createdAt: "desc"
-        }
-      });
+      const versions = fetchPromptVersions(originalPromptId);
 
       return NextResponse.json(versions);
     } else {
