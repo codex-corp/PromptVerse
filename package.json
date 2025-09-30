@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "NODE_ENV=production tsx server.ts 2>&1 | tee server.log",
     "lint": "next lint",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "db:seed-prompts": "tsx scripts/seed-prompts.ts"
   },
   "dependencies": {
     "better-sqlite3": "^9.4.3",

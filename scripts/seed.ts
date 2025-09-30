@@ -156,7 +156,7 @@ async function main() {
   resetDatabase();
 
   const johnId = insertUser("john@example.com", "John Doe");
-  const janeId = insertUser("jane@example.com", "Jane Smith");
+  const janeId = insertUser("hany@example.com", "Hany alsamman");
   const mikeId = insertUser("mike@example.com", "Mike Johnson");
 
   const marketingId = insertCategory(
