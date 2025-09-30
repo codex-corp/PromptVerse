@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { Copy, Download, Send, Wand2, Sparkles, AlertCircle, Plus } from "lucide-react";
+import { Copy, Download, AlertCircle, Plus, RotateCcw, X } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
@@ -16,6 +16,8 @@ import { toast } from "sonner";
 interface PromptTransformerProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
+    authorId: string | null;
+    onPromptAdded: () => void;
 }
 
 interface TransformResult {
@@ -38,12 +40,11 @@ interface TransformedPrompt {
     category?: string;
 }
 
-const DEFAULT_PROMPT = `You are a world-class prompt engineer. Your task is to take the user's raw text and transform it into a highly effective, detailed, and clear prompt for a generative AI model. Do not add any conversational fluff, greetings, or explanations. Return ONLY the refined prompt text.
-
+const JSON_PROMPT = `You are a world-class prompt engineer. Your task is to take the user's raw text and transform it into a highly effective, detailed, and clear prompt for a generative AI model. Do not add any conversational fluff, greetings, or explanations. Return ONLY a valid JSON object.
 Return the result in the following JSON format:
 {
   "title": "Brief title for the prompt",
-  "content": "The refined prompt content",
+  "content": "The refined prompt content as a markdown string",
   "description": "Optional description of what the prompt does",
   "targetModel": "gpt-4",
   "temperature": 0.7,
@@ -56,15 +57,33 @@ Return the result in the following JSON format:
   "category": "Category name"
 }`;
 
-export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps) {
+const MARKDOWN_PROMPT = `You are a world-class prompt engineer. Your task is to take the user's raw text and transform it into a highly effective, detailed, and clear prompt for a generative AI model. The response should be a markdown string. Do not add any conversational fluff, greetings, or explanations. Return ONLY the refined prompt text in Markdown format.`;
+
+const TEMPLATES = [
+    { name: "Blog Post", content: "Write a blog post about [topic] for [audience]. Focus on [key points] and include [style elements]." },
+    { name: "Social Media Ad", content: "Create a social media ad for [product/service] targeting [audience]. Use [tone] and highlight [benefits]." },
+    { name: "Technical Guide", content: "Explain [technical concept] to [audience level]. Include [key components] and [examples]." }
+];
+
+export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded }: PromptTransformerProps) {
     const [inputText, setInputText] = useState("");
-    const [selectedPrompt, setSelectedPrompt] = useState(DEFAULT_PROMPT);
+    const [selectedPrompt, setSelectedPrompt] = useState(MARKDOWN_PROMPT);
     const [isTransforming, setIsTransforming] = useState(false);
-    const [result, setResult] = useState<TransformResult | null>(null);
-    const [format, setFormat] = useState<"markdown" | "json">("markdown");
     const [error, setError] = useState<string | null>(null);
+    const [format, setFormat] = useState<"markdown" | "json">("markdown");
+    const [result, setResult] = useState<TransformResult | null>(null);
     const [isAddingToPrompts, setIsAddingToPrompts] = useState(false);
+    const [charCount, setCharCount] = useState(0);
+    const [isRegenerating, setIsRegenerating] = useState(false);
     const abortControllerRef = useRef<AbortController | null>(null);
+
+    useEffect(() => {
+        if (format === "json") {
+            setSelectedPrompt(JSON_PROMPT);
+        } else {
+            setSelectedPrompt(MARKDOWN_PROMPT);
+        }
+    }, [format]);
 
     // Handle keyboard shortcut
     useEffect(() => {
@@ -153,12 +172,68 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
         }
     };
 
+    const handleRegenerate = async () => {
+        if (!inputText.trim()) {
+            setError("Input text cannot be empty");
+            return;
+        }
+
+        setError(null);
+        setIsRegenerating(true);
+
+        // Cancel any previous requests
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
+        try {
+            // Call the custom OpenAI-like API endpoint
+            const response = await fetch("/api/transform-prompt", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    inputText,
+                    systemPrompt: selectedPrompt,
+                    format,
+                }),
+                signal: controller.signal,
+            });
+
+            if (!response.ok) {
+                const errorData = await response.text();
+                throw new Error(errorData || "Failed to transform prompt");
+            }
+
+            const data = await response.json();
+            setResult({
+                refinedPrompt: data.refinedPrompt,
+                format,
+            });
+        } catch (error: any) {
+            if (error.name === "AbortError") {
+                console.log("Request was cancelled");
+                return;
+            }
+
+            console.error("Error transforming prompt:", error);
+            setError(error.message || "An error occurred while transforming the prompt");
+            toast.error(error.message || "Failed to transform prompt");
+        } finally {
+            setIsRegenerating(false);
+            abortControllerRef.current = null;
+        }
+    };
+
     const copyToClipboard = async (text: string) => {
         try {
-            // Extract content from result based on format
             let contentToCopy = text;
 
-            if (format === "json") {
+            if (result?.format === "json") {
                 try {
                     const parsed = JSON.parse(text);
                     contentToCopy = parsed.content || text;
@@ -207,31 +282,19 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
     };
 
     const addToPrompts = async () => {
-        if (!result) return;
+        if (!result || result.format !== 'json') return;
 
         setIsAddingToPrompts(true);
         try {
-            let promptData: TransformedPrompt;
-
-            if (format === "json") {
-                try {
-                    promptData = JSON.parse(result.refinedPrompt);
-                } catch (e) {
-                    throw new Error("Invalid JSON response from API");
-                }
-            } else {
-                // If it's markdown, we need to extract JSON from code blocks
-                const jsonMatch = result.refinedPrompt.match(/```json\n([\s\S]*?)\n```/);
-                if (jsonMatch) {
-                    promptData = JSON.parse(jsonMatch[1]);
-                } else {
-                    throw new Error("No JSON found in response");
-                }
-            }
+            const promptData: TransformedPrompt = JSON.parse(result.refinedPrompt);
 
             // Validate required fields
             if (!promptData.title || !promptData.content) {
                 throw new Error("Title and content are required fields");
+            }
+
+            if (!authorId) {
+                throw new Error("Author not found. Please ensure you are logged in.");
             }
 
             // Call the API endpoint to create the prompt
@@ -253,7 +316,7 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
                     notes: promptData.notes,
                     tags: promptData.tags,
                     categoryId: promptData.category ? promptData.category : null,
-                    authorId: "current-user-id", // Replace with actual user ID
+                    authorId: authorId,
                 }),
             });
 
@@ -266,6 +329,7 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
 
             if (newPrompt) {
                 toast.success("Prompt added successfully!");
+                onPromptAdded();
                 resetForm();
             } else {
                 throw new Error("Failed to create prompt");
@@ -298,7 +362,7 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
     const getDisplayContent = () => {
         if (!result) return "";
 
-        if (format === "json") {
+        if (result.format === "json") {
             try {
                 const parsed = JSON.parse(result.refinedPrompt);
                 return parsed.content || result.refinedPrompt;
@@ -321,6 +385,25 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
         return result.refinedPrompt;
     };
 
+    const handleTemplateSelect = (template: string) => {
+        setInputText(template);
+        setCharCount(template.length);
+    };
+
+    const handleInspiration = () => {
+        const inspirations = [
+            "Write a sci-fi story about quantum teleportation",
+            "Create a marketing strategy for a new eco-friendly product",
+            "Explain blockchain technology to a 10-year-old",
+            "Design a workout plan for busy professionals",
+            "Develop a social media campaign for a charity event"
+        ];
+
+        const randomInspiration = inspirations[Math.floor(Math.random() * inspirations.length)];
+        setInputText(randomInspiration);
+        setCharCount(randomInspiration.length);
+    };
+
     // Cleanup on unmount
     useEffect(() => {
         return () => {
@@ -332,19 +415,18 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent className="max-w-4xl h-[80vh] max-h-[80vh] flex flex-col overflow-hidden">
+            <DialogContent className="max-w-6xl h-[90vh] max-h-[90vh] flex flex-col overflow-hidden">
                 <div className="dialog-content-scrollbar h-full overflow-y-auto">
                     <DialogHeader className="shrink-0 pb-2">
                         <DialogTitle className="flex items-center gap-2">
-                            <Wand2 className="h-5 w-5" />
-                            <Sparkles className="h-4 w-4 text-primary" />
+                            <span className="text-xl">✨</span>
                             Prompt Transformer
                         </DialogTitle>
                         <DialogDescription>
                             Transform your raw text into a refined AI prompt using advanced prompt engineering.
                             <br />
                             <Badge variant="outline" className="mt-1">
-                                Press Ctrl+Alt+Space to open this window anytime
+                                Press double Shift to open this window anytime
                             </Badge>
                         </DialogDescription>
                     </DialogHeader>
@@ -354,14 +436,70 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
                             <div className="flex-1 flex flex-col gap-4">
                                 {/* Input Section */}
                                 <div className="space-y-3">
-                                    <h4 className="text-sm font-medium">Your Raw Text</h4>
-                                    <Textarea
-                                        placeholder="Paste your raw text here that you want to transform into a refined prompt..."
-                                        value={inputText}
-                                        onChange={(e) => setInputText(e.target.value)}
-                                        className="min-h-[150px] resize-none font-mono text-sm max-h-[200px] overflow-y-auto"
-                                        disabled={isTransforming}
-                                    />
+                                    <div className="flex items-center justify-between">
+                                        <h4 className="text-sm font-medium">Enter your raw prompt here:</h4>
+                                        <div className="flex gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={handleInspiration}
+                                            >
+                                                Inspiration
+                                            </Button>
+                                            <select
+                                                value=""
+                                                onChange={(e) => {
+                                                    if (e.target.value) handleTemplateSelect(e.target.value);
+                                                    e.target.value = "";
+                                                }}
+                                                className="text-xs border rounded px-2 py-1"
+                                            >
+                                                <option value="">Quick Templates</option>
+                                                {TEMPLATES.map((template) => (
+                                                    <option key={template.name} value={template.content}>
+                                                        {template.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="relative">
+                                        <Textarea
+                                            placeholder="Describe your idea concisely... (e.g., 'Write a blog post about AI ethics')."
+                                            value={inputText}
+                                            onChange={(e) => {
+                                                const text = e.target.value;
+                                                if (text.length <= 1000) {
+                                                    setInputText(text);
+                                                    setCharCount(text.length);
+                                                }
+                                            }}
+                                            className={`min-h-[120px] max-h-[200px] resize-none font-mono text-sm ${
+                                                charCount > 900 ? "text-red-500" :
+                                                    charCount > 700 ? "text-yellow-500" : "text-gray-500"
+                                            }`}
+                                            disabled={isTransforming}
+                                        />
+                                        <div className="absolute bottom-2 right-2 text-xs">
+                      <span className={charCount > 900 ? "text-red-500" : charCount > 700 ? "text-yellow-500" : "text-gray-500"}>
+                        {charCount}/1000
+                      </span>
+                                            {inputText && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-4 w-4 ml-2"
+                                                    onClick={() => {
+                                                        setInputText("");
+                                                        setCharCount(0);
+                                                    }}
+                                                >
+                                                    <X className="h-3 w-3" />
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
 
                                 <Separator />
@@ -423,17 +561,17 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
                                     <Button
                                         onClick={handleTransform}
                                         disabled={!inputText.trim() || isTransforming}
-                                        className="min-w-[120px]"
+                                        className="min-w-[180px]"
                                     >
                                         {isTransforming ? (
                                             <>
-                                                <Sparkles className="h-4 w-4 mr-2 animate-spin" />
+                                                <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
                                                 Transforming...
                                             </>
                                         ) : (
                                             <>
-                                                <Send className="h-4 w-4 mr-2" />
-                                                Transform
+                                                <span className="mr-2">✨</span>
+                                                Transform Prompt
                                             </>
                                         )}
                                     </Button>
@@ -443,7 +581,7 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
                             <div className="flex-1 flex flex-col">
                                 {/* Result Section */}
                                 <div className="flex items-center justify-between mb-3">
-                                    <h4 className="text-sm font-medium">Transformed Prompt</h4>
+                                    <h4 className="text-sm font-medium">Professional Prompt</h4>
                                     <div className="flex gap-2">
                                         <Button
                                             variant="outline"
@@ -462,45 +600,70 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
                                             )}
                                         >
                                             <Download className="h-3 w-3 mr-1" />
-                                            Download
+                                            Export
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={handleRegenerate}
+                                            disabled={isRegenerating}
+                                        >
+                                            {isRegenerating ? (
+                                                <>
+                                                    <div className="h-3 w-3 mr-1 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
+                                                    Regenerating...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <RotateCcw className="h-3 w-3 mr-1" />
+                                                    Regenerate
+                                                </>
+                                            )}
                                         </Button>
                                     </div>
                                 </div>
 
                                 <div className="flex-1 border rounded-md p-4 bg-background overflow-y-auto">
-                                    <ScrollArea className="h-full w-full">
-                                        {result.format === "markdown" ? (
-                                            <div className="prose dark:prose-invert max-w-none">
-                                                <ReactMarkdown
-                                                    components={{
-                                                        code({ node, inline, className, children, ...props }) {
-                                                            const match = /language-(\w+)/.exec(className || "");
-                                                            return !inline && match ? (
-                                                                <SyntaxHighlighter
-                                                                    style={atomDark}
-                                                                    language={match[1]}
-                                                                    PreTag="div"
-                                                                    {...props}
-                                                                >
-                                                                    {String(children).replace(/\n$/, "")}
-                                                                </SyntaxHighlighter>
-                                                            ) : (
-                                                                <code className={className} {...props}>
-                                                                    {children}
-                                                                </code>
-                                                            );
-                                                        },
-                                                    }}
-                                                >
+                                    {isRegenerating ? (
+                                        <div className="h-full flex flex-col items-center justify-center">
+                                            <div className="h-12 w-12 animate-spin rounded-full border-4 border-primary border-t-transparent mb-4"></div>
+                                            <p className="text-muted-foreground">Regenerating prompt...</p>
+                                        </div>
+                                    ) : (
+                                        <ScrollArea className="h-full w-full">
+                                            {result.format === "markdown" ? (
+                                                <div className="prose dark:prose-invert max-w-none">
+                                                    <ReactMarkdown
+                                                        components={{
+                                                            code({ node, inline, className, children, ...props }) {
+                                                                const match = /language-(\w+)/.exec(className || "");
+                                                                return !inline && match ? (
+                                                                    <SyntaxHighlighter
+                                                                        style={atomDark}
+                                                                        language={match[1]}
+                                                                        PreTag="div"
+                                                                        {...props}
+                                                                    >
+                                                                        {String(children).replace(/\n$/, "")}
+                                                                    </SyntaxHighlighter>
+                                                                ) : (
+                                                                    <code className={className} {...props}>
+                                                                        {children}
+                                                                    </code>
+                                                                );
+                                                            },
+                                                        }}
+                                                    >
+                                                        {getDisplayContent()}
+                                                    </ReactMarkdown>
+                                                </div>
+                                            ) : (
+                                                <div className="text-sm font-mono whitespace-pre-wrap">
                                                     {getDisplayContent()}
-                                                </ReactMarkdown>
-                                            </div>
-                                        ) : (
-                                            <div className="text-sm font-mono whitespace-pre-wrap">
-                                                {getDisplayContent()}
-                                            </div>
-                                        )}
-                                    </ScrollArea>
+                                                </div>
+                                            )}
+                                        </ScrollArea>
+                                    )}
                                 </div>
 
                                 <div className="mt-3 flex items-center justify-between">
@@ -518,11 +681,11 @@ export function PromptTransformer({ open, onOpenChange }: PromptTransformerProps
                                         </Button>
                                         <Button
                                             onClick={addToPrompts}
-                                            disabled={isAddingToPrompts}
+                                            disabled={isAddingToPrompts || result.format === 'markdown'}
                                         >
                                             {isAddingToPrompts ? (
                                                 <>
-                                                    <Sparkles className="h-4 w-4 mr-2 animate-spin" />
+                                                    <div className="h-4 w-4 mr-2 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
                                                     Adding...
                                                 </>
                                             ) : (
