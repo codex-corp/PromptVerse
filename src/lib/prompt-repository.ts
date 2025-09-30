@@ -469,7 +469,7 @@ export function createPrompt(data: CreatePromptInput) {
 
 export function updatePrompt(
   id: string,
-  data: Partial<CreatePromptInput> & { isFavorite?: boolean | null; tags?: string[] }
+  data: Partial<CreatePromptInput> & { isFavorite?: boolean | null; tags?: string[], viewCount?: number | null; }
 ) {
   const existing = fetchPromptById(id);
   if (!existing) {
@@ -496,6 +496,7 @@ export function updatePrompt(
       notes = ?,
       categoryId = ?,
       isFavorite = ?,
+      viewCount = ?,
       updatedAt = ?
      WHERE id = ?`
   ).run(
@@ -511,6 +512,7 @@ export function updatePrompt(
     data.notes ?? existing.notes,
     data.categoryId ?? existing.category?.id ?? null,
     newIsFavorite ? 1 : 0,
+    data.viewCount ?? existing.viewCount,
     now,
     id
   );
