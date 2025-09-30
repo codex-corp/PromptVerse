@@ -16,6 +16,12 @@ PromptVerse is an open-source workspace for discovering, organizing, and transfo
 # Install dependencies
 npm install
 
+# Create a .env file and set the DATABASE_URL
+echo "DATABASE_URL=\"file:./db/dev.db\"" > .env
+
+# Create the database and apply the schema
+npx prisma migrate dev --name init
+
 # Seed sample data (optional)
 npm run db:seed
 
