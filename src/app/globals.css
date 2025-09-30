@@ -123,26 +123,29 @@
   }
 }
 
-/* Add to app/globals.css */
-.dialog-content-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--border)) transparent;
-}
-
-.dialog-content-scrollbar::-webkit-scrollbar {
+/* Global scrollbar styles for dark theme with glass effect */
+::-webkit-scrollbar {
     width: 8px;
     height: 8px;
 }
 
-.dialog-content-scrollbar::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
     background: transparent;
 }
 
-.dialog-content-scrollbar::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--border));
+::-webkit-scrollbar-thumb {
+    background-color: color-mix(in oklch, var(--border), transparent 30%); /* More transparent for glass effect */
     border-radius: 4px;
+    backdrop-filter: blur(4px); /* Glass effect */
+    border: 1px solid color-mix(in oklch, var(--border), transparent 50%); /* Subtle border */
 }
 
-.dialog-content-scrollbar::-webkit-scrollbar-corner {
+::-webkit-scrollbar-corner {
     background: transparent;
+}
+
+/* For Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--border), transparent 30%) transparent; /* thumb track */
 }
