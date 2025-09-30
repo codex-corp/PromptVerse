@@ -98,6 +98,10 @@ export default function PromptVerse() {
   const [error, setError] = useState<string | null>(null);
   const [defaultUser, setDefaultUser] = useState<{ id: string; name: string; email: string } | null>(null);
 
+  const handleSearchChange = useCallback((query: string) => {
+    setFilters((prev) => ({ ...prev, search: query }));
+  }, []);
+
   const fetchDefaultUser = useCallback(async () => {
     try {
       const response = await fetch("/api/users?limit=1");
@@ -404,7 +408,7 @@ export default function PromptVerse() {
           <div className="ml-auto flex items-center space-x-4">
             <AdvancedSearch
               searchQuery={filters.search}
-              onSearchChange={(query) => setFilters(prev => ({ ...prev, search: query }))}
+              onSearchChange={handleSearchChange}
               prompts={filteredPrompts}
             />
             <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
