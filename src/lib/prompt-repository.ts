@@ -163,12 +163,12 @@ export function fetchPrompts(options: PromptFilterOptions) {
       json_object('id', u.id, 'name', u.name, 'email', u.email) as author,
       json_object('id', c.id, 'name', c.name, 'color', c.color) as category,
       COALESCE(json_group_array(
-        CASE
+        DISTINCT CASE
           WHEN t.id IS NOT NULL THEN json_object('tag', json_object('id', t.id, 'name', t.name, 'color', t.color))
         END
       ), '[]') as tags,
       COALESCE(AVG(r.value), 0) as averageRating,
-      COUNT(r.id) as totalRatings
+      COUNT(DISTINCT r.id) as totalRatings
     FROM prompts p
     JOIN User u ON u.id = p.authorId
     LEFT JOIN Category c ON c.id = p.categoryId
@@ -478,6 +478,10 @@ export function updatePrompt(
 
   const now = new Date().toISOString();
 
+  const newIsFavorite = data.isFavorite === null || data.isFavorite === undefined
+    ? existing.isFavorite
+    : data.isFavorite;
+
   db.prepare(
     `UPDATE prompts SET
       title = ?,
@@ -506,9 +510,7 @@ export function updatePrompt(
     data.presencePenalty ?? existing.presencePenalty,
     data.notes ?? existing.notes,
     data.categoryId ?? existing.category?.id ?? null,
-    data.isFavorite === null || data.isFavorite === undefined
-      ? existing.isFavorite
-      : data.isFavorite,
+    newIsFavorite ? 1 : 0,
     now,
     id
   );

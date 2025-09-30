@@ -1,25 +1,14 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  // 禁用 Next.js 热重载，由 nodemon 处理重编译
-  reactStrictMode: false,
-  webpack: (config, { dev }) => {
-    if (dev) {
-      // 禁用 webpack 的热模块替换
-      config.watchOptions = {
-        ignored: ['**/*'], // 忽略所有文件变化
-      };
-    }
-    return config;
-  },
-  eslint: {
-    // 构建时忽略ESLint错误
-    ignoreDuringBuilds: true,
-  },
+    webpack: (config) => {
+        // This is the crucial part for WSL live-reloading
+        config.watchOptions = {
+            poll: 1000, // Check for changes every second
+            aggregateTimeout: 300, // Delay before rebuilding
+        };
+        return config;
+    },
 };
 
-export default nextConfig;
+module.exports = nextConfig;

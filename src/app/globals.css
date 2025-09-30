@@ -81,7 +81,7 @@
 }
 
 .dark {
-  --background: oklch(0.19 0.03 250);
+  --background: oklch(0.22 0.03 250);
   --foreground: oklch(0.92 0.015 250);
   --card: oklch(0.22 0.03 250);
   --card-foreground: oklch(0.92 0.015 250);
@@ -121,4 +121,28 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Add to app/globals.css */
+.dialog-content-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+}
+
+.dialog-content-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.dialog-content-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.dialog-content-scrollbar::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border));
+    border-radius: 4px;
+}
+
+.dialog-content-scrollbar::-webkit-scrollbar-corner {
+    background: transparent;
 }

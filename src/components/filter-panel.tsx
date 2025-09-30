@@ -282,9 +282,9 @@ export function FilterPanel({
                 Minimum Rating
               </h4>
               <Select
-                value={localRating?.toString() || ""}
+                value={localRating?.toString() || "all"}
                 onValueChange={(value) => {
-                  const rating = value === "" ? null : parseInt(value);
+                  const rating = value === "all" ? null : parseInt(value);
                   setLocalRating(rating);
                   updateFilter("rating", rating);
                 }}
@@ -294,7 +294,7 @@ export function FilterPanel({
                 </SelectTrigger>
                 <SelectContent>
                   {RATING_OPTIONS.map((option) => (
-                    <SelectItem key={option.value?.toString() || "all"} value={option.value?.toString() || ""}>
+                    <SelectItem key={option.value?.toString() || "all"} value={option.value?.toString() || "all"}>
                       {option.label}
                     </SelectItem>
                   ))}

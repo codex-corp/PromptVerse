@@ -111,24 +111,29 @@ export function PromptForm({
   };
 
   useEffect(() => {
-    if (initialData) {
-      form.reset({
-        title: initialData.title || "",
-        content: initialData.content || "",
-        description: initialData.description || "",
-        targetModel: initialData.targetModel || "",
-        temperature: initialData.temperature ?? 0.7,
-        maxTokens: initialData.maxTokens ?? 1000,
-        topP: initialData.topP ?? 1.0,
-        frequencyPenalty: initialData.frequencyPenalty ?? 0,
-        presencePenalty: initialData.presencePenalty ?? 0,
-        notes: initialData.notes || "",
-        categoryId: initialData.categoryId || "",
-        tags: initialData.tags || [],
-      });
-      setTags(initialData.tags || []);
+    if (open) {
+      if (initialData) {
+        form.reset({
+          title: initialData.title || "",
+          content: initialData.content || "",
+          description: initialData.description || "",
+          targetModel: initialData.targetModel || "",
+          temperature: initialData.temperature ?? 0.7,
+          maxTokens: initialData.maxTokens ?? 1000,
+          topP: initialData.topP ?? 1.0,
+          frequencyPenalty: initialData.frequencyPenalty ?? 0,
+          presencePenalty: initialData.presencePenalty ?? 0,
+          notes: initialData.notes || "",
+          categoryId: initialData.categoryId || "",
+          tags: initialData.tags || [],
+        });
+        setTags(initialData.tags || []);
+      } else {
+        form.reset();
+        setTags([]);
+      }
     }
-  }, [initialData, form]);
+  }, [open, initialData, form]);
 
   const addTag = () => {
     if (currentTag && !tags.includes(currentTag)) {
