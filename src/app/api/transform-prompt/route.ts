@@ -85,27 +85,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const prompt = `${systemPrompt}
-
-Original text:
-${inputText}
-
-${
-  format === "json"
-    ? "Return the result in JSON format with a 'refinedPrompt' field."
-    : "Return ONLY the refined prompt text in Markdown format."
-}`;
-
     const completion = await callChatCompletion({
       messages: [
         {
           role: "system",
-          content:
-            "You are an expert prompt engineer specializing in transforming raw text into effective AI prompts.",
+          content: systemPrompt,
         },
         {
           role: "user",
-          content: prompt,
+          content: inputText,
         },
       ],
       temperature: 0.7,
@@ -113,37 +101,6 @@ ${
     });
 
     let refinedPrompt = completion.choices?.[0]?.message?.content?.trim() ?? "";
-
-    if (format === "json") {
-      try {
-        const jsonMatch = refinedPrompt.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          refinedPrompt = JSON.stringify(parsed, null, 2);
-        } else {
-          refinedPrompt = JSON.stringify(
-            {
-              refinedPrompt,
-              originalText: `${inputText.substring(0, 100)}...`,
-              transformedAt: new Date().toISOString(),
-            },
-            null,
-            2,
-          );
-        }
-      } catch (error) {
-        console.error("Error parsing JSON response:", error);
-        refinedPrompt = JSON.stringify(
-          {
-            refinedPrompt,
-            originalText: `${inputText.substring(0, 100)}...`,
-            transformedAt: new Date().toISOString(),
-          },
-          null,
-          2,
-        );
-      }
-    }
 
     return NextResponse.json({
       refinedPrompt,

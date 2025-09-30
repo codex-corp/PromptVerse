@@ -51,7 +51,8 @@ export async function PUT(
       notes,
       categoryId,
       tags,
-      isFavorite
+      isFavorite,
+      viewCount,
     } = body;
 
     const updated = updatePrompt(id, {
@@ -74,6 +75,7 @@ export async function PUT(
       categoryId,
       tags,
       isFavorite,
+      viewCount: viewCount !== undefined && viewCount !== null ? parseInt(viewCount, 10) : undefined,
     });
 
     if (!updated) {

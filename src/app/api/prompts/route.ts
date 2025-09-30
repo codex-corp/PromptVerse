@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
@@ -65,7 +66,7 @@ export async function POST(request: NextRequest) {
       frequencyPenalty,
       presencePenalty,
       notes,
-      categoryId,
+      category,
       tags,
       authorId
     } = body;
@@ -87,6 +88,19 @@ export async function POST(request: NextRequest) {
         { error: "Author not found" },
         { status: 404 }
       );
+    }
+
+    let categoryId: string | null = null;
+    if (category) {
+        let categoryRow = db.prepare("SELECT id FROM Category WHERE name = ?").get(category) as { id: string } | undefined;
+        if (categoryRow) {
+            categoryId = categoryRow.id;
+        } else {
+            const newCategoryId = randomUUID();
+            const now = new Date().toISOString();
+            db.prepare("INSERT INTO Category (id, name, createdAt, updatedAt) VALUES (?, ?, ?, ?)").run(newCategoryId, category, now, now);
+            categoryId = newCategoryId;
+        }
     }
 
     const created = createPrompt({
