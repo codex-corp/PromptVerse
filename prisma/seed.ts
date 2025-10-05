@@ -1,267 +1,143 @@
+import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
 
+const ENGINEERING_CATEGORIES = [
+  { name: 'Code Quality', description: 'Reviews, testing, and debugging workflows', color: '#3B82F6' },
+  { name: 'Architecture', description: 'System design and trade-off analysis', color: '#10B981' },
+  { name: 'Operations', description: 'Migrations, incidents, and runbooks', color: '#F59E0B' },
+]
+
+const SUPPORTED_MODELS = [
+  { name: 'gpt-4o', provider: 'openai' },
+  { name: 'gpt-4o-mini', provider: 'openai' },
+  { name: 'gpt-4.1', provider: 'openai' },
+  { name: 'gpt-4.1-mini', provider: 'openai' },
+  { name: 'o1-mini', provider: 'openai' },
+  { name: 'LongCat-Flash-Chat', provider: 'longcat' },
+  { name: 'LongCat-Flash-Thinking', provider: 'longcat' },
+]
+
 async function main() {
-  console.log('Seeding database...')
+  const seedUserEmail = (process.env.SEED_USER_EMAIL ?? 'hany@codexc.com').trim()
+  const seedUserName = (process.env.SEED_USER_NAME ?? 'Hany alsamman').trim()
 
-  // Create sample users
-  const user1 = await prisma.user.create({
+  console.log('Resetting database...')
+
+  await prisma.promptTag.deleteMany({})
+  await prisma.rating.deleteMany({})
+  await prisma.promptVersion.deleteMany({})
+  await prisma.prompt.deleteMany({})
+  await prisma.tag.deleteMany({})
+  await prisma.category.deleteMany({})
+  await prisma.model.deleteMany({})
+  await prisma.user.deleteMany({})
+
+  console.log('Creating base user...')
+  const hany = await prisma.user.create({
     data: {
-      email: 'john@example.com',
-      name: 'John Doe',
+      email: seedUserEmail,
+      name: seedUserName,
     },
   })
 
-  const user2 = await prisma.user.create({
-    data: {
-      email: 'hany@example.com',
-      name: 'Hany alsamman',
+  console.log('Seeding models...')
+  await prisma.model.createMany({ data: SUPPORTED_MODELS })
+
+  console.log('Seeding categories...')
+  const categories = await Promise.all(
+    ENGINEERING_CATEGORIES.map((category) =>
+      prisma.category.create({ data: category })
+    )
+  )
+
+  const categoryByName = Object.fromEntries(categories.map((category) => [category.name, category]))
+
+  console.log('Adding engineering templates...')
+
+  const ensureTags = async (names: string[]) => {
+    const results = []
+    for (const name of names) {
+      let tag = await prisma.tag.findUnique({ where: { name } })
+      if (!tag) {
+        tag = await prisma.tag.create({ data: { name, color: '#6366F1' } })
+      }
+      results.push({ tagId: tag.id })
+    }
+    return results
+  }
+
+  const templates = [
+    {
+      title: 'Code review risk radar',
+      description: 'Staff engineer review focused on regressions and missing tests.',
+      category: 'Code Quality',
+      content:
+        'Review this pull request like a staff engineer. Highlight regressions, missing tests, and risk areas.\n\nProject: [repo]\nImpact: [blast radius]\nStandards: [tests/perf/docs]\nSummary: [paste]\nDiff: [paste]\n\nAnswer with Merge Blockers, High Priority, Questions, Test Gaps, Nice-to-haves.',
+      tags: ['code-review', 'quality'],
     },
-  })
-
-  const user3 = await prisma.user.create({
-    data: {
-      email: 'mike@example.com',
-      name: 'Mike Johnson',
+    {
+      title: 'Architecture trade study',
+      description: 'Compare implementation options with pros/cons and recommendation.',
+      category: 'Architecture',
+      content:
+        'Act as a principal engineer. Compare Option A/B/C for [problem]. Include pros/cons, risks, mitigations, and recommend the best fit against success criteria [list].',
+      tags: ['architecture', 'trade-off'],
     },
-  })
-
-  // Create categories
-  const marketingCategory = await prisma.category.create({
-    data: {
-      name: 'Marketing',
-      description: 'Marketing and content creation prompts',
-      color: '#3B82F6',
+    {
+      title: 'Migration runbook',
+      description: 'Draft phased migration steps with readiness, rollback, and monitoring.',
+      category: 'Operations',
+      content:
+        'Plan a phased migration for [change]. Include readiness checklist, execution steps per environment, rollback plan, monitoring, and comms.',
+      tags: ['migration', 'runbook'],
     },
-  })
+  ]
 
-  const codeCategory = await prisma.category.create({
-    data: {
-      name: 'Code Generation',
-      description: 'Programming and development prompts',
-      color: '#10B981',
-    },
-  })
-
-  const creativeCategory = await prisma.category.create({
-    data: {
-      name: 'Creative Writing',
-      description: 'Creative and storytelling prompts',
-      color: '#F59E0B',
-    },
-  })
-
-  const analysisCategory = await prisma.category.create({
-    data: {
-      name: 'Analysis',
-      description: 'Data analysis and research prompts',
-      color: '#EF4444',
-    },
-  })
-
-  const businessCategory = await prisma.category.create({
-    data: {
-      name: 'Business',
-      description: 'Business and strategy prompts',
-      color: '#8B5CF6',
-    },
-  })
-
-  // Create tags
-  const tags = await Promise.all([
-    prisma.tag.create({ data: { name: 'blog', color: '#3B82F6' } }),
-    prisma.tag.create({ data: { name: 'content', color: '#10B981' } }),
-    prisma.tag.create({ data: { name: 'marketing', color: '#F59E0B' } }),
-    prisma.tag.create({ data: { name: 'react', color: '#06B6D4' } }),
-    prisma.tag.create({ data: { name: 'typescript', color: '#3178C6' } }),
-    prisma.tag.create({ data: { name: 'component', color: '#007ACC' } }),
-    prisma.tag.create({ data: { name: 'ecommerce', color: '#059669' } }),
-    prisma.tag.create({ data: { name: 'product', color: '#DC2626' } }),
-    prisma.tag.create({ data: { name: 'sales', color: '#EA580C' } }),
-  ])
-
-  // Create prompts
-  const prompt1 = await prisma.prompt.create({
-    data: {
-      title: 'Blog Post Introduction',
-      content: 'Write a compelling introduction for a blog post about [topic]. The introduction should grab the reader\'s attention, present the main problem or question, and provide a brief overview of what will be covered.',
-      description: 'Perfect for creating engaging blog post openings',
-      targetModel: 'GPT-4',
-      temperature: 0.7,
-      maxTokens: 1000,
-      topP: 1.0,
-      frequencyPenalty: 0,
-      presencePenalty: 0,
-      notes: 'This prompt works best for informational blog posts. Adjust the temperature for more creative variations.',
-      isFavorite: true,
-      viewCount: 156,
-      authorId: user1.id,
-      categoryId: marketingCategory.id,
-      tags: {
-        create: [
-          { tagId: tags[0].id }, // blog
-          { tagId: tags[1].id }, // content
-          { tagId: tags[2].id }, // marketing
-        ],
+  for (const template of templates) {
+    const prompt = await prisma.prompt.create({
+      data: {
+        title: template.title,
+        description: template.description,
+        content: template.content,
+        targetModel: 'gpt-4o',
+        temperature: 0.2,
+        maxTokens: 1024,
+        topP: 1,
+        frequencyPenalty: 0,
+        presencePenalty: 0,
+        notes: 'Seeded engineering template',
+        authorId: hany.id,
+        categoryId: categoryByName[template.category].id,
+        tags: { create: await ensureTags(template.tags) },
       },
-    },
-  })
+    })
 
-  const prompt2 = await prisma.prompt.create({
-    data: {
-      title: 'React Component Generator',
-      content: 'Create a React component that [description]. The component should be functional, use hooks if necessary, and include proper TypeScript types. Make it reusable and well-documented.',
-      description: 'Generate clean React components with TypeScript',
-      targetModel: 'GPT-4',
-      temperature: 0.3,
-      maxTokens: 2000,
-      topP: 1.0,
-      frequencyPenalty: 0,
-      presencePenalty: 0,
-      notes: 'Ideal for generating boilerplate components. Lower temperature ensures more consistent output.',
-      isFavorite: true,
-      viewCount: 203,
-      authorId: user2.id,
-      categoryId: codeCategory.id,
-      tags: {
-        create: [
-          { tagId: tags[3].id }, // react
-          { tagId: tags[4].id }, // typescript
-          { tagId: tags[5].id }, // component
-        ],
+    await prisma.promptVersion.create({
+      data: {
+        title: prompt.title,
+        content: prompt.content,
+        description: prompt.description,
+        targetModel: prompt.targetModel,
+        temperature: prompt.temperature,
+        maxTokens: prompt.maxTokens,
+        topP: prompt.topP,
+        frequencyPenalty: prompt.frequencyPenalty,
+        presencePenalty: prompt.presencePenalty,
+        notes: prompt.notes,
+        versionNote: 'Initial version',
+        originalPromptId: prompt.id,
       },
-    },
-  })
+    })
+  }
 
-  const prompt3 = await prisma.prompt.create({
-    data: {
-      title: 'Product Description',
-      content: 'Write a persuasive product description for [product name]. Highlight the key features, benefits, and unique selling points. Use emotional language and include a call to action.',
-      description: 'Create compelling product descriptions that convert',
-      targetModel: 'Claude 3',
-      temperature: 0.8,
-      maxTokens: 800,
-      topP: 0.9,
-      frequencyPenalty: 0.5,
-      presencePenalty: 0.5,
-      notes: 'Higher temperature helps create more engaging and varied marketing copy.',
-      isFavorite: false,
-      viewCount: 89,
-      authorId: user3.id,
-      categoryId: marketingCategory.id,
-      tags: {
-        create: [
-          { tagId: tags[6].id }, // ecommerce
-          { tagId: tags[7].id }, // product
-          { tagId: tags[8].id }, // sales
-        ],
-      },
-    },
-  })
-
-  // Create ratings
-  await prisma.rating.create({
-    data: {
-      value: 5,
-      comment: 'Excellent prompt for creating engaging blog intros!',
-      userId: user1.id,
-      promptId: prompt1.id,
-    },
-  })
-
-  await prisma.rating.create({
-    data: {
-      value: 4,
-      comment: 'Great for boilerplate code, sometimes needs adjustments',
-      userId: user2.id,
-      promptId: prompt2.id,
-    },
-  })
-
-  await prisma.rating.create({
-    data: {
-      value: 4,
-      userId: user3.id,
-      promptId: prompt1.id,
-    },
-  })
-
-  // Create versions
-  await prisma.promptVersion.create({
-    data: {
-      title: 'Blog Post Introduction',
-      content: 'Write a compelling introduction for a blog post about [topic]. The introduction should grab the reader\'s attention, present the main problem or question, and provide a brief overview of what will be covered.',
-      description: 'Perfect for creating engaging blog post openings',
-      targetModel: 'GPT-4',
-      temperature: 0.7,
-      maxTokens: 1000,
-      topP: 1.0,
-      frequencyPenalty: 0,
-      presencePenalty: 0,
-      notes: 'This prompt works best for informational blog posts. Adjust the temperature for more creative variations.',
-      versionNote: 'Initial version created',
-      originalPromptId: prompt1.id,
-    },
-  })
-
-  await prisma.promptVersion.create({
-    data: {
-      title: 'React Component Generator',
-      content: 'Create a React component that [description]. The component should be functional, use hooks if necessary, and include proper TypeScript types. Make it reusable and well-documented.',
-      description: 'Generate clean React components with TypeScript',
-      targetModel: 'GPT-4',
-      temperature: 0.3,
-      maxTokens: 2000,
-      topP: 1.0,
-      frequencyPenalty: 0,
-      presencePenalty: 0,
-      notes: 'Ideal for generating boilerplate components. Lower temperature ensures more consistent output.',
-      versionNote: 'Initial version with TypeScript support',
-      originalPromptId: prompt2.id,
-    },
-  })
-
-  await prisma.promptVersion.create({
-    data: {
-      title: 'React Component Generator v2',
-      content: 'Create a React component that [description] with proper error handling and accessibility. The component should be functional, use hooks if necessary, and include comprehensive TypeScript types. Make it reusable, well-documented, and follow React best practices.',
-      description: 'Generate clean React components with TypeScript and best practices',
-      targetModel: 'GPT-4',
-      temperature: 0.4,
-      maxTokens: 2500,
-      topP: 0.9,
-      frequencyPenalty: 0.2,
-      presencePenalty: 0.1,
-      notes: 'Enhanced version with error handling and accessibility requirements.',
-      versionNote: 'Added error handling and accessibility requirements',
-      originalPromptId: prompt2.id,
-    },
-  })
-
-  await prisma.promptVersion.create({
-    data: {
-      title: 'Product Description',
-      content: 'Write a persuasive product description for [product name]. Highlight the key features, benefits, and unique selling points. Use emotional language and include a call to action.',
-      description: 'Create compelling product descriptions that convert',
-      targetModel: 'Claude 3',
-      temperature: 0.8,
-      maxTokens: 800,
-      topP: 0.9,
-      frequencyPenalty: 0.5,
-      presencePenalty: 0.5,
-      notes: 'Higher temperature helps create more engaging and varied marketing copy.',
-      versionNote: 'Initial version focused on emotional language',
-      originalPromptId: prompt3.id,
-    },
-  })
-
-  console.log('Database seeded successfully!')
+  console.log('Seeding complete.')
 }
 
 main()
-  .catch((e) => {
-    console.error(e)
+  .catch((error) => {
+    console.error('Seeding failed', error)
     process.exit(1)
   })
   .finally(async () => {
