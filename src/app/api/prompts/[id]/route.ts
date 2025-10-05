@@ -6,20 +6,15 @@ import {
 } from "@/lib/prompt-repository";
 
 type RouteContext = {
-  params: { id: string } | Promise<{ id: string }>;
+  params: { id: string };
 };
-
-async function resolveId(params: RouteContext["params"]) {
-  const resolved = await Promise.resolve(params);
-  return resolved.id;
-}
 
 export async function GET(
   request: NextRequest,
   context: RouteContext
 ) {
   try {
-    const id = await resolveId(context.params);
+    const { id } = context.params;
 
     const prompt = fetchPromptById(id);
 
@@ -45,7 +40,7 @@ export async function PUT(
   context: RouteContext
 ) {
   try {
-    const id = await resolveId(context.params);
+    const { id } = context.params;
     const body = await request.json();
     const {
       title,
@@ -109,7 +104,7 @@ export async function DELETE(
   context: RouteContext
 ) {
   try {
-    const id = await resolveId(context.params);
+    const { id } = context.params;
 
     const removed = deletePrompt(id);
 
