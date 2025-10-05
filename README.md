@@ -7,6 +7,7 @@ PromptVerse is an open-source workspace for discovering, organizing, and transfo
 - **Database-backed workflows** – create, edit, clone, and rate prompts stored in a shared SQLite catalog.
 - **Lightning-fast discovery** – advanced filtering and live search keep the right prompt a keystroke away.
 - **Built-in transformer** – open the transformer window from anywhere with <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>Space</kbd>.
+- **ChatGPT supercharge** – flip the transformer to ChatGPT mode for guided mode suggestions, inline analytics, and developer-grade scaffolds.
 - **Offline-ready PWA** – install PromptVerse as a desktop experience on Windows 11 or any modern browser.
 - **Dark mode design system** – accessible theming tuned for productive day and night work.
 
@@ -31,6 +32,19 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) and explore the seeded workspace or connect your own SQLite database by updating `DATABASE_URL`.
 
+### 🌱 Seed Baseline Data
+
+Run one of the following to load the default user (`Hany alsamman <hany@codexc.com>`), engineering categories, models, and starter templates:
+
+```bash
+npm run db:seed        # uses scripts/seed.ts (better-sqlite3)
+npx prisma db seed     # uses prisma/seed.ts (Prisma Client)
+```
+
+Both commands produce the same baseline dataset so the transformer’s template gallery and model picker are ready to go.
+
+Set `SEED_USER_EMAIL` / `SEED_USER_NAME` in `.env` to customise the default account used during seeding.
+
 ## 🔌 Configure the Transformer Provider
 
 The `/api/transform-prompt` endpoint speaks to any OpenAI-compatible API, including hosted OpenAI models and local runtimes such
@@ -41,14 +55,45 @@ as [Ollama](https://ollama.com/). Set the following environment variables in you
 AI_BASE_URL="http://localhost:11434/v1"
 AI_MODEL="llama3"
 
-# Example: OpenAI
+# Example: OpenAI (paid)
 AI_BASE_URL="https://api.openai.com/v1"
 AI_API_KEY="sk-..."
 AI_MODEL="gpt-4o-mini"
+
+# Example: Longcat (free tier)
+AI_BASE_URL="https://api.longcat.chat/v1"
+AI_API_KEY="lc-..."    # obtain at https://longcat.chat/platform/docs
+AI_MODEL="LongCat-Flash-Chat"
+# Other option: LongCat-Flash-Thinking
 ```
 
 `AI_API_KEY` is optional for self-hosted providers that do not require authentication. PromptVerse automatically normalizes the
 base URL, so both local and remote deployments work without code changes.
+
+**Using Longcat's free tier**
+1. Register at [LongCat's platform](https://longcat.chat/platform/docs/) and complete the sign-up form.
+2. After logging in, open the [API Keys](https://longcat.chat/platform/api_keys) page.
+3. Your account automatically includes a `default` key—copy its value into `AI_API_KEY`.
+   - `Name`: application identifier.
+   - `Key`: secret token—store securely.
+
+### 💬 ChatGPT Mode
+
+The transformer now includes a **ChatGPT** toggle designed for developer workflows. Selecting this mode swaps in a system prompt that enforces a structured scaffold:
+
+- Top-level directives (`/ROLE`, `/TASK`, `/FORMAT`, `/CONTEXT`, `/QUALITY BAR`, `/ASK`).
+- Optional reasoning add-ons (`/STEP-BY-STEP`, `/CHAIN OF THOUGHT`, `/CHECKLIST`, `/PM MODE`, and more) that are only appended when the model detects they will add value.
+- Follow-up questions focused on clarifying ambiguous requirements.
+
+- Guided mode selection helps you pin modes (e.g. `/STEP-BY-STEP`) based on live suggestions derived from the raw brief.
+- Inline analytics tracks the most-used modes so you can see what the team relies on while iterating prompts.
+- Copy prompts as Markdown, RTF, or open a ChatGPT tab preloaded with the scaffold—the tool also copies the prompt to your clipboard on the way.
+- Saving from the transformer auto-generates a crisp title and description, pulling `/ROLE` + `/TASK` metadata in ChatGPT mode or summarising the opening brief in Standard mode.
+- Engineering template gallery (inspired by OpenAI's "ChatGPT for engineering teams") offers ready-to-tailor prompts for reviews, architecture decisions, debugging, migrations, and incidents. Templates adapt automatically to Standard or ChatGPT mode.
+- Save finished prompts directly to your workspace—Markdown responses are auto-titled and tagged before persisting.
+- Launch an embedded tour with `Ctrl` + `H` to learn the layout (templates, raw prompt builder, guided modes, analytics, and actions).
+
+The output is always Markdown so you can paste it directly into ChatGPT or any OpenAI-compatible chat interface. Switch back to **Standard** mode to regain JSON exports.
 
 ## 📦 Install as an App
 1. Launch PromptVerse in Microsoft Edge, Chrome, or another PWA-capable browser.
@@ -63,6 +108,11 @@ base URL, so both local and remote deployments work without code changes.
 - **Prompt creation** – capture structured metadata and persist it instantly to the database.
 - **Version manager** – clone prompts, record version notes, and evolve prompts safely.
 - **Prompt transformer** – send prompts through the `/api/transform-prompt` endpoint for automated refinement.
+  - Switch between the default profile and a ChatGPT-targeted profile that outputs `/ROLE`, `/TASK`, `/ASK`, and smart reasoning modes such as `/CHAIN OF THOUGHT` or `/CHECKLIST` when relevant.
+  - Guided mode suggestions, pinned modes, and inline analytics keep ChatGPT prompts sharp and measurable.
+  - Engineering template library with ready-to-tailor prompts for code reviews, architecture debates, debugging plans, migrations, and incident postmortems.
+  - Save transformed prompts (Markdown or JSON) straight into your library with generated titles, sensible defaults, and tags.
+  - Interactive tour (`Ctrl` + `H`) walks new teammates through the transformer workflow step by step.
 
 ## 🛠️ Tech Stack
 - **Framework**: Next.js 15 (App Router) + TypeScript 5 + React 19
