@@ -37,8 +37,7 @@ jobs:
       - name: Build static site
         env:
           NEXT_DEPLOY_TARGET: github-pages
-          NEXT_PUBLIC_BASE_PATH: "/${{ github.event.repository.name }}"
-        run: npm run build:pages
+        run: npm run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
