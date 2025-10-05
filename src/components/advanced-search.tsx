@@ -4,9 +4,9 @@
 import { useState, useEffect, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
+import { Command, CommandEmpty, CommandGroup, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Search, FileText, User, Tag, Zap } from "lucide-react";
+import { Search, FileText } from "lucide-react";
 
 interface Prompt {
     id: string;
@@ -51,13 +51,17 @@ interface Prompt {
 interface AdvancedSearchProps {
     searchQuery: string;
     onSearchChange: (query: string) => void;
-    prompts: Prompt[];
+    prompts?: Prompt[];
 }
 
-export function AdvancedSearch({ searchQuery, onSearchChange, prompts }: AdvancedSearchProps) {
+export function AdvancedSearch({ searchQuery, onSearchChange, prompts = [] }: AdvancedSearchProps) {
     const [open, setOpen] = useState(false);
     const [inputValue, setInputValue] = useState(searchQuery);
+    const [suggestions, setSuggestions] = useState<Prompt[]>(prompts);
+    const [isFetching, setIsFetching] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
+    const debounceRef = useRef<number | null>(null);
+    const abortRef = useRef<AbortController | null>(null);
 
     // Update input value when searchQuery prop changes
     useEffect(() => {
@@ -72,13 +76,78 @@ export function AdvancedSearch({ searchQuery, onSearchChange, prompts }: Advance
         }
     };
 
-    // Filter prompts based on input
-    const filteredPrompts = prompts.filter(prompt =>
-        prompt.title.toLowerCase().includes(inputValue.toLowerCase()) ||
-        prompt.content.toLowerCase().includes(inputValue.toLowerCase()) ||
-        prompt.description?.toLowerCase().includes(inputValue.toLowerCase()) ||
-        prompt.tags?.some(tag => tag.tag.name.toLowerCase().includes(inputValue.toLowerCase()))
-    );
+    useEffect(() => {
+        setSuggestions(prompts);
+    }, [prompts]);
+
+    useEffect(() => {
+        if (!open) {
+            return;
+        }
+
+        if (debounceRef.current) {
+            window.clearTimeout(debounceRef.current);
+        }
+
+        if (abortRef.current) {
+            abortRef.current.abort();
+        }
+
+        const controller = new AbortController();
+        abortRef.current = controller;
+
+        debounceRef.current = window.setTimeout(async () => {
+            const query = inputValue.trim();
+
+            try {
+                setIsFetching(true);
+                const params = new URLSearchParams();
+                if (query.length > 0) {
+                    params.set("search", query);
+                }
+                params.set("limit", "25");
+
+                const response = await fetch(`/api/prompts?${params.toString()}`, {
+                    signal: controller.signal,
+                });
+
+                if (!response.ok) {
+                    throw new Error("Failed to fetch search results");
+                }
+
+                const data = await response.json();
+                setSuggestions(data.prompts ?? []);
+            } catch (error) {
+                if (controller.signal.aborted) {
+                    return;
+                }
+                console.error("Search fetch failed", error);
+                setSuggestions(prompts);
+            } finally {
+                if (!controller.signal.aborted) {
+                    setIsFetching(false);
+                }
+            }
+        }, 200);
+
+        return () => {
+            if (debounceRef.current) {
+                window.clearTimeout(debounceRef.current);
+            }
+            controller.abort();
+        };
+    }, [inputValue, open, prompts]);
+
+    useEffect(() => {
+        return () => {
+            if (debounceRef.current) {
+                window.clearTimeout(debounceRef.current);
+            }
+            if (abortRef.current) {
+                abortRef.current.abort();
+            }
+        };
+    }, []);
 
     return (
         <div className="relative">
@@ -91,10 +160,17 @@ export function AdvancedSearch({ searchQuery, onSearchChange, prompts }: Advance
                             value={inputValue}
                             onChange={(e) => {
                                 setInputValue(e.target.value);
-                                onSearchChange(e.target.value);
                             }}
-                            onKeyDown={handleKeyDown}
+                            onKeyDown={(event) => {
+                                if (event.key === "Escape") {
+                                    setOpen(false);
+                                    inputRef.current?.blur();
+                                    return;
+                                }
+                                handleKeyDown(event);
+                            }}
                             onFocus={() => setOpen(true)}
+                            onClick={() => setOpen(true)}
                             className="pl-10 pr-10"
                         />
                         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -114,32 +190,35 @@ export function AdvancedSearch({ searchQuery, onSearchChange, prompts }: Advance
                         )}
                     </div>
                 </PopoverTrigger>
-                <PopoverContent className="p-0 w-[300px]">
-                    <Command>
-                        <CommandInput placeholder="Search prompts..." />
-                        <CommandEmpty>No prompts found.</CommandEmpty>
-                        <CommandGroup>
-                            {filteredPrompts.slice(0, 5).map((prompt) => (
-                                <CommandItem
-                                    key={prompt.id}
-                                    onSelect={() => {
-                                        setInputValue(prompt.title);
-                                        onSearchChange(prompt.title);
-                                        setOpen(false);
-                                    }}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <FileText className="h-4 w-4" />
-                                        <div className="flex flex-col">
-                                            <span className="text-sm font-medium">{prompt.title}</span>
-                                            <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-                        {prompt.description || prompt.content.substring(0, 50) + "..."}
-                      </span>
+                <PopoverContent align="start" className="p-0 w-[360px]">
+                    <Command shouldFilter={false} className="max-h-72 overflow-y-auto">
+                        <CommandList>
+                            <CommandEmpty>
+                                {isFetching ? "Searching prompts…" : "No prompts found."}
+                            </CommandEmpty>
+                            <CommandGroup>
+                                {suggestions.slice(0, 10).map((prompt) => (
+                                    <CommandItem
+                                        key={prompt.id}
+                                        onSelect={() => {
+                                            setInputValue(prompt.title);
+                                            onSearchChange(prompt.title);
+                                            setOpen(false);
+                                        }}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <FileText className="h-4 w-4" />
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-medium">{prompt.title}</span>
+                                                <span className="text-xs text-muted-foreground truncate max-w-[240px]">
+                                                    {prompt.description || `${prompt.content.slice(0, 80)}…`}
+                                                </span>
+                                            </div>
                                         </div>
-                                    </div>
-                                </CommandItem>
-                            ))}
-                        </CommandGroup>
+                                    </CommandItem>
+                                ))}
+                            </CommandGroup>
+                        </CommandList>
                     </Command>
                 </PopoverContent>
             </Popover>
