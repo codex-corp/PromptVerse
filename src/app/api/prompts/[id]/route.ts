@@ -5,12 +5,21 @@ import {
   updatePrompt,
 } from "@/lib/prompt-repository";
 
+type RouteContext = {
+  params: { id: string } | Promise<{ id: string }>;
+};
+
+async function resolveId(params: RouteContext["params"]) {
+  const resolved = await Promise.resolve(params);
+  return resolved.id;
+}
+
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ) {
   try {
-    const { id } = params;
+    const id = await resolveId(context.params);
 
     const prompt = fetchPromptById(id);
 
@@ -33,10 +42,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ) {
   try {
-    const { id } = params;
+    const id = await resolveId(context.params);
     const body = await request.json();
     const {
       title,
@@ -97,10 +106,10 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: RouteContext
 ) {
   try {
-    const { id } = params;
+    const id = await resolveId(context.params);
 
     const removed = deletePrompt(id);
 

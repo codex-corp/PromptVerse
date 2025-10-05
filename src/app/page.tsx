@@ -223,18 +223,27 @@ export default function PromptVerse() {
 
     // Initial data fetch
     useEffect(() => {
-        fetchPrompts();
         fetchCategories();
-    }, [fetchPrompts, fetchCategories]);
+    }, [fetchCategories]);
 
     useEffect(() => {
         fetchDefaultUser();
     }, [fetchDefaultUser]);
 
-    // Fetch prompts when filters change
+    // Refresh lists whenever filters change or a new prompt is created elsewhere.
     useEffect(() => {
         fetchPrompts();
-    }, [fetchPrompts]);
+
+        const handlePromptAdded = () => {
+            fetchPrompts();
+            fetchCategories();
+        };
+
+        window.addEventListener("promptverse:prompt-added", handlePromptAdded);
+        return () => {
+            window.removeEventListener("promptverse:prompt-added", handlePromptAdded);
+        };
+    }, [fetchPrompts, fetchCategories]);
 
     // Handle responsive layout
     useEffect(() => {
@@ -603,7 +612,7 @@ export default function PromptVerse() {
                         <AdvancedSearch
                             searchQuery={filters.search}
                             onSearchChange={handleSearchChange}
-                            prompts={filteredPrompts}
+                            prompts={prompts}
                         />
                         <Button size="sm" onClick={() => setIsCreateDialogOpen(true)}>
                             <PlusIcon className="h-4 w-4 mr-2" />
