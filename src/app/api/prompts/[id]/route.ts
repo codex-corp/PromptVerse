@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getDatabaseClient } from "@/lib/db";
+import { getRequestContext } from "@cloudflare/next-on-pages";
 import {
   deletePrompt,
   fetchPromptById,
   updatePrompt,
 } from "@/lib/prompt-repository";
+
+export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
 
 export async function GET(
   request: NextRequest,
@@ -12,7 +16,9 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const prompt = fetchPromptById(id);
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+    const db = getDatabaseClient(env);
+    const prompt = await fetchPromptById(id, db);
 
     if (!prompt) {
       return NextResponse.json(
@@ -55,7 +61,9 @@ export async function PUT(
       viewCount,
     } = body;
 
-    const updated = updatePrompt(id, {
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+    const db = getDatabaseClient(env);
+    const updated = await updatePrompt(id, {
       title,
       content,
       description,
@@ -76,7 +84,7 @@ export async function PUT(
       tags,
       isFavorite,
       viewCount: viewCount !== undefined && viewCount !== null ? parseInt(viewCount, 10) : undefined,
-    });
+    }, db);
 
     if (!updated) {
       return NextResponse.json(
@@ -102,7 +110,9 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const removed = deletePrompt(id);
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+    const db = getDatabaseClient(env);
+    const removed = await deletePrompt(id, db);
 
     if (!removed) {
       return NextResponse.json(

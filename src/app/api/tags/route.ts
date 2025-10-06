@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
-import { db } from "@/lib/db";
+import { getDatabaseClient } from "@/lib/db";
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { generateId } from "@/lib/id";
+
+
+export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,18 +12,13 @@ export async function GET(request: NextRequest) {
     const includeCounts = searchParams.get("includeCounts") === "true";
     const search = searchParams.get("search") || "";
 
-    const where = search
-      ? {
-          name: {
-            contains: search,
-            mode: "insensitive" as const
-          }
-        }
-      : {};
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+
+    const db = getDatabaseClient(env);
 
     if (includeCounts) {
       // Get tags with prompt counts
-      const tags = db
+      const tags = await db
         .prepare(`
           SELECT t.id, t.name, t.color, t.createdAt, t.updatedAt,
                  COUNT(pt.id) AS count
@@ -34,7 +33,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(tags);
     } else {
       // Get simple tags list
-      const tags = db
+      const tags = await db
         .prepare(`
           SELECT id, name, color, createdAt, updatedAt
           FROM Tag
@@ -67,8 +66,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if tag already exists
-    const existingTag = db
-      .prepare("SELECT id FROM Tag WHERE name = ?")
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+
+    const db = getDatabaseClient(env);
+
+    const existingTag = await db
+      .prepare<{ id: string }>("SELECT id FROM Tag WHERE name = ?")
       .get(name);
 
     if (existingTag) {
@@ -79,15 +82,15 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date().toISOString();
-    const id = randomUUID();
+    const id = generateId();
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO Tag (id, name, color, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?)`
     ).run(id, name, color ?? null, now, now);
 
-    const newTag = db
-      .prepare(
+    const newTag = await db
+      .prepare<{ id: string; name: string; color: string | null; createdAt: string; updatedAt: string }>(
         "SELECT id, name, color, createdAt, updatedAt FROM Tag WHERE id = ?"
       )
       .get(id);

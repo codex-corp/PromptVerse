@@ -1,3 +1,12 @@
-import { getDatabase } from "./sqlite";
+export type {
+  DatabaseClient,
+  DatabasePreparedStatement,
+  DatabaseRunResult,
+} from "./d1-db";
 
-export const db = getDatabase();
+export {
+  getDatabaseClient,
+  getD1FromEnv,
+  getLocalDatabase,
+  getDatabaseFromRequest,
+} from "./d1-db";

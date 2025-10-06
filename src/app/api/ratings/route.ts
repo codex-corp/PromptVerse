@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
-import { db } from "@/lib/db";
+import { getDatabaseClient } from "@/lib/db";
+import { getRequestContext } from "@cloudflare/next-on-pages";
+import { generateId } from "@/lib/id";
+
+interface RatingResponse {
+  id: string;
+  value: number;
+  comment: string | null;
+  createdAt: string;
+  updatedAt: string;
+  userId: string;
+  user: { id: string; name: string };
+}
+
+
+export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,9 +22,13 @@ export async function GET(request: NextRequest) {
     const promptId = searchParams.get("promptId");
     const userId = searchParams.get("userId");
 
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+
+    const db = getDatabaseClient(env);
+
     if (promptId) {
       // Get ratings for a specific prompt
-      const ratings = db
+      const ratings = (await db
         .prepare(`
           SELECT r.id, r.value, r.comment, r.createdAt, r.updatedAt, r.userId,
                  json_object('id', u.id, 'name', u.name) as user
@@ -19,7 +37,7 @@ export async function GET(request: NextRequest) {
           WHERE r.promptId = ?
           ORDER BY datetime(r.createdAt) DESC
         `)
-        .all(promptId)
+        .all(promptId))
         .map((row: any) => ({
           id: row.id,
           value: row.value,
@@ -33,7 +51,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(ratings);
     } else if (userId) {
       // Get ratings by a specific user
-      const ratings = db
+      const ratings = (await db
         .prepare(`
           SELECT r.id, r.value, r.comment, r.createdAt, r.updatedAt, r.promptId,
                  json_object('id', p.id, 'title', p.title, 'targetModel', p.targetModel) as prompt
@@ -42,7 +60,7 @@ export async function GET(request: NextRequest) {
           WHERE r.userId = ?
           ORDER BY datetime(r.createdAt) DESC
         `)
-        .all(userId)
+        .all(userId))
         .map((row: any) => ({
           id: row.id,
           value: row.value,
@@ -91,8 +109,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if prompt exists
-    const prompt = db
-      .prepare("SELECT id FROM prompts WHERE id = ?")
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+
+    const db = getDatabaseClient(env);
+
+    const prompt = await db
+      .prepare<{ id: string }>("SELECT id FROM prompts WHERE id = ?")
       .get(promptId);
 
     if (!prompt) {
@@ -103,30 +125,54 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user has already rated this prompt
-    const existingRating = db
-      .prepare("SELECT * FROM ratings WHERE userId = ? AND promptId = ?")
+    const existingRating = await db
+      .prepare<{
+        id: string;
+        userId: string;
+        promptId: string;
+        value: number;
+        comment: string | null;
+        createdAt: string;
+        updatedAt: string;
+      }>("SELECT * FROM ratings WHERE userId = ? AND promptId = ?")
       .get(userId, promptId);
 
-    let rating;
+    let rating: RatingResponse;
 
     if (existingRating) {
       // Update existing rating
       const updatedAt = new Date().toISOString();
-      db.prepare(
+      await db.prepare(
         `UPDATE ratings
          SET value = ?, comment = ?, updatedAt = ?
          WHERE id = ?`
       ).run(value, comment ?? existingRating.comment, updatedAt, existingRating.id);
 
-      const updated = db
-        .prepare(`
+      const updated = await db
+        .prepare<{
+          id: string;
+          value: number;
+          comment: string | null;
+          createdAt: string;
+          updatedAt: string;
+          userId: string;
+          user: string;
+        }>(
+          `
           SELECT r.id, r.value, r.comment, r.createdAt, r.updatedAt, r.userId,
                  json_object('id', u.id, 'name', u.name) as user
           FROM ratings r
           JOIN User u ON u.id = r.userId
           WHERE r.id = ?
-        `)
+        `
+        )
         .get(existingRating.id);
+
+      if (!updated) {
+        throw new Error("Updated rating not found");
+      }
+
+      const parsedUser = JSON.parse(updated.user) as { id: string; name: string };
 
       rating = {
         id: updated.id,
@@ -135,27 +181,42 @@ export async function POST(request: NextRequest) {
         createdAt: updated.createdAt,
         updatedAt: updated.updatedAt,
         userId: existingRating.userId,
-        user: JSON.parse(updated.user),
+        user: parsedUser,
       };
     } else {
       // Create new rating
-      const id = randomUUID();
+      const id = generateId();
       const timestamp = new Date().toISOString();
 
-      db.prepare(
+      await db.prepare(
         `INSERT INTO ratings (id, promptId, userId, value, comment, createdAt, updatedAt)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       ).run(id, promptId, userId, value, comment ?? null, timestamp, timestamp);
 
-      const inserted = db
-        .prepare(`
+      const inserted = await db
+        .prepare<{
+          id: string;
+          value: number;
+          comment: string | null;
+          createdAt: string;
+          updatedAt: string;
+          user: string;
+        }>(
+          `
           SELECT r.id, r.value, r.comment, r.createdAt, r.updatedAt,
                  json_object('id', u.id, 'name', u.name) as user
           FROM ratings r
           JOIN User u ON u.id = r.userId
           WHERE r.id = ?
-        `)
+        `
+        )
         .get(id);
+
+      if (!inserted) {
+        throw new Error("Inserted rating not found");
+      }
+
+      const parsedUser = JSON.parse(inserted.user) as { id: string; name: string };
 
       rating = {
         id: inserted.id,
@@ -164,7 +225,7 @@ export async function POST(request: NextRequest) {
         createdAt: inserted.createdAt,
         updatedAt: inserted.updatedAt,
         userId,
-        user: JSON.parse(inserted.user),
+        user: parsedUser,
       };
     }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+
 type SupportedFormat = "markdown" | "json";
 
 type ChatMessage = {
@@ -66,6 +67,8 @@ async function callChatCompletion({
     clearTimeout(timeout);
   }
 }
+
+export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
 
 export async function POST(request: NextRequest) {
   let inputText = "";

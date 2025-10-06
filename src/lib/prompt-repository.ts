@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { db } from "@/lib/db";
+import type { DatabaseClient } from "@/lib/db";
+import { generateId } from "@/lib/id";
 
 export interface PromptFilterOptions {
   search?: string;
@@ -65,7 +65,7 @@ interface PromptRow {
   totalRatings: number;
 }
 
-export function fetchPrompts(options: PromptFilterOptions) {
+export async function fetchPrompts(options: PromptFilterOptions, db: DatabaseClient) {
   const {
     search = "",
     categories = [],
@@ -189,7 +189,9 @@ export function fetchPrompts(options: PromptFilterOptions) {
     ) as filtered
   `;
 
-  const totalResult = db.prepare(totalQuery).get(...params, ...havingParams) as { total: number };
+  const totalResult = (await db
+    .prepare(totalQuery)
+    .get(...params, ...havingParams)) as { total: number } | null;
 
   const offset = (safePage - 1) * safeLimit;
 
@@ -200,9 +202,9 @@ export function fetchPrompts(options: PromptFilterOptions) {
     LIMIT ? OFFSET ?
   `;
 
-  const rows = db
+  const rows = (await db
     .prepare(finalQuery)
-    .all(...params, ...havingParams, safeLimit, offset) as PromptRow[];
+    .all(...params, ...havingParams, safeLimit, offset)) as PromptRow[];
 
   const prompts = rows.map((row) => ({
     id: row.id,
@@ -239,9 +241,29 @@ export function fetchPrompts(options: PromptFilterOptions) {
   };
 }
 
-export function fetchPromptById(id: string) {
-  const promptRow = db
-    .prepare(`
+interface PromptRowWithAuthor {
+  id: string;
+  title: string;
+  content: string;
+  description: string | null;
+  targetModel: string;
+  temperature: number | null;
+  maxTokens: number | null;
+  topP: number | null;
+  frequencyPenalty: number | null;
+  presencePenalty: number | null;
+  notes: string | null;
+  isFavorite: number;
+  viewCount: number;
+  createdAt: string;
+  updatedAt: string;
+  author: string;
+  category: string | null;
+}
+
+export async function fetchPromptById(id: string, db: DatabaseClient) {
+  const promptRow = await db
+    .prepare<PromptRowWithAuthor>(`
       SELECT
         p.id,
         p.title,
@@ -271,19 +293,27 @@ export function fetchPromptById(id: string) {
     return null;
   }
 
-  const tags = db
-    .prepare(`
+  const tags = (await db
+    .prepare<{ id: string; name: string; color: string | null }>(`
       SELECT t.id, t.name, t.color
       FROM prompt_tags pt
       JOIN Tag t ON t.id = pt.tagId
       WHERE pt.promptId = ?
       ORDER BY t.name ASC
     `)
-    .all(id)
+    .all(id))
     .map((tag) => ({ tag }));
 
-  const ratings = db
-    .prepare(`
+  const ratings = (await db
+    .prepare<{
+      id: string;
+      value: number;
+      comment: string | null;
+      createdAt: string;
+      updatedAt: string;
+      userId: string;
+      user: string;
+    }>(`
       SELECT r.id, r.value, r.comment, r.createdAt, r.updatedAt, r.userId,
              json_object('id', u.id, 'name', u.name) as user
       FROM ratings r
@@ -291,7 +321,7 @@ export function fetchPromptById(id: string) {
       WHERE r.promptId = ?
       ORDER BY datetime(r.createdAt) DESC
     `)
-    .all(id)
+    .all(id))
     .map((row: any) => ({
       id: row.id,
       value: row.value,
@@ -299,11 +329,26 @@ export function fetchPromptById(id: string) {
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       userId: row.userId,
-      user: JSON.parse(row.user),
+      user: JSON.parse(row.user) as { id: string; name: string },
     }));
 
-  const versions = db
-    .prepare(`
+  const versions = (await db
+    .prepare<{
+      id: string;
+      title: string;
+      content: string;
+      description: string | null;
+      targetModel: string;
+      temperature: number | null;
+      maxTokens: number | null;
+      topP: number | null;
+      frequencyPenalty: number | null;
+      presencePenalty: number | null;
+      notes: string | null;
+      versionNote: string | null;
+      createdAt: string;
+      originalPrompt: string;
+    }>(`
       SELECT pv.id, pv.title, pv.content, pv.description, pv.targetModel,
              pv.temperature, pv.maxTokens, pv.topP, pv.frequencyPenalty,
              pv.presencePenalty, pv.notes, pv.versionNote, pv.createdAt,
@@ -313,7 +358,7 @@ export function fetchPromptById(id: string) {
       WHERE pv.originalPromptId = ?
       ORDER BY datetime(pv.createdAt) DESC
     `)
-    .all(id)
+    .all(id))
     .map((row: any) => ({
       id: row.id,
       title: row.title,
@@ -335,7 +380,7 @@ export function fetchPromptById(id: string) {
     ? ratings.reduce((sum, rating) => sum + rating.value, 0) / ratings.length
     : 0;
 
-  const author = JSON.parse(promptRow.author);
+  const author = JSON.parse(promptRow.author) as { id: string; name: string; email: string };
 
   const versionsWithAuthor = versions.map((version) => ({
     ...version,
@@ -384,11 +429,11 @@ interface CreatePromptInput {
   authorId: string;
 }
 
-export function createPrompt(data: CreatePromptInput) {
+export async function createPrompt(data: CreatePromptInput, db: DatabaseClient) {
   const now = new Date().toISOString();
-  const id = randomUUID();
+  const id = generateId();
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO prompts (
       id, title, content, description, targetModel,
       temperature, maxTokens, topP, frequencyPenalty,
@@ -429,26 +474,26 @@ export function createPrompt(data: CreatePromptInput) {
       const trimmed = name.trim();
       if (!trimmed) continue;
 
-      let tag = tagStmt.get(trimmed) as { id: string } | undefined;
+      let tag = (await tagStmt.get(trimmed)) as { id: string } | undefined;
       if (!tag) {
-        const tagId = randomUUID();
+        const tagId = generateId();
         const timestamp = new Date().toISOString();
-        insertTagStmt.run(tagId, trimmed, timestamp, timestamp);
+        await insertTagStmt.run(tagId, trimmed, timestamp, timestamp);
         tag = { id: tagId };
       }
 
-      linkStmt.run(randomUUID(), id, tag.id);
+      await linkStmt.run(generateId(), id, tag.id);
     }
   }
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO prompt_versions (
       id, title, content, description, targetModel,
       temperature, maxTokens, topP, frequencyPenalty,
       presencePenalty, notes, versionNote, createdAt, originalPromptId
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    randomUUID(),
+    generateId(),
     data.title,
     data.content,
     data.description ?? null,
@@ -464,14 +509,15 @@ export function createPrompt(data: CreatePromptInput) {
     id
   );
 
-  return fetchPromptById(id);
+  return fetchPromptById(id, db);
 }
 
-export function updatePrompt(
+export async function updatePrompt(
   id: string,
-  data: Partial<CreatePromptInput> & { isFavorite?: boolean | null; tags?: string[], viewCount?: number | null; }
+  data: Partial<CreatePromptInput> & { isFavorite?: boolean | null; tags?: string[]; viewCount?: number | null },
+  db: DatabaseClient
 ) {
-  const existing = fetchPromptById(id);
+  const existing = await fetchPromptById(id, db);
   if (!existing) {
     return null;
   }
@@ -482,7 +528,7 @@ export function updatePrompt(
     ? existing.isFavorite
     : data.isFavorite;
 
-  db.prepare(
+  await db.prepare(
     `UPDATE prompts SET
       title = ?,
       content = ?,
@@ -518,7 +564,7 @@ export function updatePrompt(
   );
 
   if (data.tags) {
-    db.prepare("DELETE FROM prompt_tags WHERE promptId = ?").run(id);
+    await db.prepare("DELETE FROM prompt_tags WHERE promptId = ?").run(id);
 
     const tagStmt = db.prepare("SELECT id FROM Tag WHERE name = ?");
     const insertTagStmt = db.prepare(
@@ -534,19 +580,19 @@ export function updatePrompt(
       const trimmed = name.trim();
       if (!trimmed) continue;
 
-      let tag = tagStmt.get(trimmed) as { id: string } | undefined;
+      let tag = (await tagStmt.get(trimmed)) as { id: string } | undefined;
       if (!tag) {
-        const tagId = randomUUID();
+        const tagId = generateId();
         const timestamp = new Date().toISOString();
-        insertTagStmt.run(tagId, trimmed, timestamp, timestamp);
+        await insertTagStmt.run(tagId, trimmed, timestamp, timestamp);
         tag = { id: tagId };
       }
 
-      linkStmt.run(randomUUID(), id, tag.id);
+      await linkStmt.run(generateId(), id, tag.id);
     }
   }
 
-  const updated = fetchPromptById(id);
+  const updated = await fetchPromptById(id, db);
 
   if (!updated) {
     return null;
@@ -559,14 +605,14 @@ export function updatePrompt(
     (data.targetModel !== undefined && data.targetModel !== existing.targetModel);
 
   if (significantChanges) {
-    db.prepare(
+    await db.prepare(
       `INSERT INTO prompt_versions (
         id, title, content, description, targetModel,
         temperature, maxTokens, topP, frequencyPenalty,
         presencePenalty, notes, versionNote, createdAt, originalPromptId
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
-      randomUUID(),
+      generateId(),
       updated.title,
       updated.content,
       updated.description ?? null,
@@ -586,15 +632,15 @@ export function updatePrompt(
   return updated;
 }
 
-export function deletePrompt(id: string) {
-  db.prepare("DELETE FROM prompt_tags WHERE promptId = ?").run(id);
-  db.prepare("DELETE FROM ratings WHERE promptId = ?").run(id);
-  db.prepare("DELETE FROM prompt_versions WHERE originalPromptId = ?").run(id);
-  const result = db.prepare("DELETE FROM prompts WHERE id = ?").run(id);
+export async function deletePrompt(id: string, db: DatabaseClient) {
+  await db.prepare("DELETE FROM prompt_tags WHERE promptId = ?").run(id);
+  await db.prepare("DELETE FROM ratings WHERE promptId = ?").run(id);
+  await db.prepare("DELETE FROM prompt_versions WHERE originalPromptId = ?").run(id);
+  const result = await db.prepare("DELETE FROM prompts WHERE id = ?").run(id);
   return result.changes > 0;
 }
 
-export function createPromptVersion(data: {
+export async function createPromptVersion(data: {
   originalPromptId: string;
   title: string;
   content: string;
@@ -607,16 +653,16 @@ export function createPromptVersion(data: {
   presencePenalty?: number | null;
   notes?: string | null;
   versionNote?: string | null;
-}) {
-  const prompt = fetchPromptById(data.originalPromptId);
+}, db: DatabaseClient) {
+  const prompt = await fetchPromptById(data.originalPromptId, db);
   if (!prompt) {
     return null;
   }
 
   const now = new Date().toISOString();
-  const id = randomUUID();
+  const id = generateId();
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO prompt_versions (
       id, title, content, description, targetModel,
       temperature, maxTokens, topP, frequencyPenalty,
@@ -639,7 +685,7 @@ export function createPromptVersion(data: {
     data.originalPromptId
   );
 
-  const row = db
+  const row = await db
     .prepare(
       `SELECT pv.id, pv.title, pv.content, pv.description, pv.targetModel,
               pv.temperature, pv.maxTokens, pv.topP, pv.frequencyPenalty,
@@ -659,8 +705,8 @@ export function createPromptVersion(data: {
   };
 }
 
-export function fetchPromptVersions(originalPromptId: string) {
-  return db
+export async function fetchPromptVersions(originalPromptId: string, db: DatabaseClient) {
+  const rows = await db
     .prepare(`
       SELECT pv.id, pv.title, pv.content, pv.description, pv.targetModel,
              pv.temperature, pv.maxTokens, pv.topP, pv.frequencyPenalty,
@@ -673,7 +719,9 @@ export function fetchPromptVersions(originalPromptId: string) {
       WHERE pv.originalPromptId = ?
       ORDER BY datetime(pv.createdAt) DESC
     `)
-    .all(originalPromptId)
+    .all(originalPromptId);
+
+  return rows
     .map((row: any) => ({
       ...row,
       originalPrompt: JSON.parse(row.originalPrompt),
