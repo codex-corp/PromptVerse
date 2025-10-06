@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
@@ -31,7 +32,6 @@ async function main() {
   await prisma.prompt.deleteMany({})
   await prisma.tag.deleteMany({})
   await prisma.category.deleteMany({})
-  await prisma.model.deleteMany({})
   await prisma.user.deleteMany({})
 
   console.log('Creating base user...')
@@ -42,8 +42,7 @@ async function main() {
     },
   })
 
-  console.log('Seeding models...')
-  await prisma.model.createMany({ data: SUPPORTED_MODELS })
+  await seedModelsIfPresent()
 
   console.log('Seeding categories...')
   const categories = await Promise.all(
@@ -57,7 +56,7 @@ async function main() {
   console.log('Adding engineering templates...')
 
   const ensureTags = async (names: string[]) => {
-    const results = []
+    const results: Array<{ tagId: string }> = []
     for (const name of names) {
       let tag = await prisma.tag.findUnique({ where: { name } })
       if (!tag) {
@@ -133,6 +132,28 @@ async function main() {
   }
 
   console.log('Seeding complete.')
+}
+
+async function seedModelsIfPresent() {
+  const tableResult = await prisma.$queryRaw<{ name?: string }[]>`
+    SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'Model'
+  `
+
+  if (!tableResult.length) {
+    console.warn('Model table not found; skipping model seed.')
+    return
+  }
+
+  console.log('Seeding models...')
+  await prisma.$executeRaw`DELETE FROM "Model"`
+
+  const timestamp = new Date().toISOString()
+  for (const model of SUPPORTED_MODELS) {
+    await prisma.$executeRaw`
+      INSERT INTO "Model" ("id", "name", "provider", "createdAt", "updatedAt")
+      VALUES (${randomUUID()}, ${model.name}, ${model.provider}, ${timestamp}, ${timestamp})
+    `
+  }
 }
 
 main()
