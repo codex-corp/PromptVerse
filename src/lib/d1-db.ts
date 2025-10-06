@@ -177,6 +177,8 @@ function resolveD1Binding(env: Record<string, any> | undefined | null) {
   }
 
   return (
+    env.DB ||
+    env.db ||
     env.promptverse_db ||
     env.PROMPTVERSE_DB ||
     env.PromptverseDb ||
@@ -191,7 +193,7 @@ export function getD1FromEnv(env: Record<string, any> | undefined | null): Datab
 
   if (!binding) {
     throw new Error(
-      "D1 binding not found. Expected 'promptverse_db' or 'promptverse_d1_db' to be configured",
+      "D1 binding not found. Expected 'DB', 'promptverse_db', or 'promptverse_d1_db' to be configured",
     );
   }
 

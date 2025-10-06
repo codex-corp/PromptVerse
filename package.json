@@ -5,14 +5,14 @@
   "scripts": {
     "dev": "CHOKIDAR_USEPOLLING=true next dev",
     "build": "next build",
-    "build:cloudflare": "NEXT_DEPLOY_TARGET=cloudflare NEXT_RUNTIME=edge next-on-pages",
+    "build:cloudflare": "next build && npx @cloudflare/next-on-pages",
     "start": "NODE_ENV=production tsx server.ts 2>&1 | tee server.log",
     "lint": "next lint",
     "db:seed": "tsx scripts/seed.ts",
     "db:seed-prompts": "tsx scripts/seed-prompts.ts",
     "postinstall": "prisma generate",
-    "preview": "npm run build:cloudflare && npx @cloudflare/next-on-pages@1.13.16 dev",
-    "deploy": "npm run build:cloudflare && wrangler pages deploy .vercel/output"
+    "preview": "npm run build:cloudflare && npx wrangler pages dev .vercel/output/static --compatibility-flag=nodejs_compat --d1=DB --kv=CACHE",
+    "deploy": "npm run build:cloudflare && wrangler pages deploy .vercel/output/static"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

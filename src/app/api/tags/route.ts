@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDatabaseFromRequest } from "@/lib/db";
 import { generateId } from "@/lib/id";
 
+
 export const runtime = "edge";
 
 export async function GET(request: NextRequest) {

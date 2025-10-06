@@ -12,6 +12,7 @@ interface RatingResponse {
   user: { id: string; name: string };
 }
 
+
 export const runtime = "edge";
 
 export async function GET(request: NextRequest) {
