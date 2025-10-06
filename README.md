@@ -33,6 +33,40 @@ Open http://localhost:3000 and explore the seeded workspace. You can change the 
 
 Need to inspect or automate the runtime swap yourself? Run `node scripts/toggle-runtime.js --help` for options such as `--dry` (preview) and `--backup`.
 
+### 🤖 Optional: Local AI Proxy (LongCat / OpenAI-compatible)
+
+If you have a LongCat (or any OpenAI-compatible) API key you can run the bundled proxy so the app always targets `http://127.0.0.1:8787/v1` during local development. The proxy adds request caching, rate-limit jitter/backoff, model remapping, and optional shared-secret enforcement.
+
+```bash
+# 1) Configure credentials
+echo "LONGCAT_KEY=lc-..." >> .env.local
+# Optional shared secret so only your app can call the proxy
+echo "PROXY_TOKEN=my-shared-secret" >> .env.local
+# Override the default model so requests map to LongCat
+echo "AI_MODEL=LongCat-Flash-Chat" >> .env.local
+
+# 2) Start dev (proxy launches automatically if LONGCAT_KEY is set)
+npm run dev:local
+
+# Or launch the proxy manually in another terminal
+npm run ai:proxy
+```
+
+When the proxy autostarts, `scripts/dev-local.js` injects `AI_BASE_URL=http://127.0.0.1:<port>/v1` (default port `8787`). If you define `PROXY_TOKEN`, the proxy enforces it and the Next.js app forwards it via `AI_API_KEY`, so every call carries the required `Authorization` header.
+
+Key proxy environment variables (optional unless noted):
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `LONGCAT_KEY` | LongCat API token used for upstream requests | - (required to start proxy) |
+| `LONGCAT_BASE` | Upstream OpenAI-compatible base URL | `https://api.longcat.chat/openai/v1` |
+| `AI_MODEL` | Default model forwarded to the upstream API | `LongCat-Flash-Chat` |
+| `PROXY_TOKEN` | Shared secret required by the proxy | unset (no auth) |
+| `AI_PROXY_PORT` | Port bound by the proxy | `8787` |
+| `AI_PROXY_HOST` | Host bound by the proxy | `127.0.0.1` |
+
+In production you can deploy the proxy as a standalone Node service (or point `AI_BASE_URL` directly at your provider) and set `AI_BASE_URL` / `AI_API_KEY` accordingly.
+
 ### 🌱 Seed Baseline Data
 
 Run one of the following to load the default user (`Hany alsamman <hany@codexc.com>`), engineering categories, models, and starter templates:
