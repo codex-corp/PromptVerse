@@ -13,7 +13,7 @@
     "postinstall": "prisma generate",
     "preview": "npm run set-runtime:edge && npm run build:cloudflare && wrangler pages deploy .vercel/output/static --branch preview",
     "deploy": "npm run set-runtime:edge && npm run build:cloudflare && wrangler pages deploy .vercel/output/static",
-    "dev:local": "npm run set-runtime:node && bash -c 'set -a; source .env.local; set +a; CHOKIDAR_USEPOLLING=true next dev'",
+    "dev:local": "node scripts/dev-local.js",
     "db:seed:local": "bash -c 'set -a; source .env.local; set +a; tsx scripts/seed.ts'",
     "db:seed-prompts:local": "bash -c 'set -a; source .env.local; set +a; tsx scripts/seed-prompts.ts'",
     "set-runtime:edge": "node scripts/toggle-runtime.js edge",

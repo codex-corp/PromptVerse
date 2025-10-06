@@ -17,17 +17,21 @@ PromptVerse is an open-source workspace for discovering, organizing, and transfo
 # Install dependencies
 npm install
 
-# Local offline dev: create .env.local with SQLite path and Node runtime
-echo -e "DATABASE_URL=file:./db/dev.db\nNEXT_RUNTIME=nodejs" > .env.local
+# Local offline dev: create .env.local with a SQLite path
+echo "DATABASE_URL=file:./db/dev.db" > .env.local
 
 # Seed local SQLite and create tables (applies schema automatically)
 npm run db:seed:local
 
-# Start local development (Node + Next.js)
+# Start local development (Node + Next.js runtime)
 npm run dev:local
 ```
 
 Open http://localhost:3000 and explore the seeded workspace. You can change the SQLite path by updating `DATABASE_URL` in `.env.local`.
+
+`npm run dev:local` uses `scripts/dev-local.js`, which temporarily flips every API route to `runtime = "nodejs"`, launches `next dev`, and automatically restores `runtime = "edge"` as soon as the dev server exits (even on Ctrl+C). That keeps the working tree clean without manual toggles.
+
+Need to inspect or automate the runtime swap yourself? Run `node scripts/toggle-runtime.js --help` for options such as `--dry` (preview) and `--backup`.
 
 ### 🌱 Seed Baseline Data
 
@@ -56,8 +60,27 @@ npm run deploy
 ```
 
 - Configuration lives in `wrangler.toml` (top-level and `[env.preview]` bindings).
-- API routes automatically use Edge/D1 on Cloudflare and Node/SQLite locally, controlled by `NEXT_RUNTIME`.
+- API routes run on the edge in production (literal `runtime = "edge"`) and the dev wrapper temporarily switches them to Node/SQLite when you run `npm run dev:local`.
 - KV binding name is `promptverse_kv`; D1 binding name is `promptverse_d1_db`.
+
+#### GitHub Actions / CI secrets
+
+Wrangler needs credentials in CI—local `wrangler login` state isn’t available in GitHub runners. Store these as repository secrets and expose them before running `npm run preview` or `npm run deploy`:
+
+| Secret | Purpose                                                                     |
+| --- |-----------------------------------------------------------------------------|
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account id (`15576ba2b25a9f04dcc0b8dcd5c0886a`).            |
+| `CLOUDFLARE_API_TOKEN` | API token with **Pages:Edit**, **D1:Edit**, and **Workers KV:Edit** scopes. |
+
+Example workflow snippet:
+
+```yaml
+env:
+  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+```
+
+If these variables are missing you will see Cloudflare API authentication errors such as `code: 10000` during deploy.
 
 ## 🔌 Configure the Transformer Provider
 
