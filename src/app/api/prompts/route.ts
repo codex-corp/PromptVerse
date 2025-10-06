@@ -1,11 +1,13 @@
-import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDatabaseFromRequest } from "@/lib/db";
 import {
   createPrompt,
   fetchPrompts,
   PromptFilterOptions,
 } from "@/lib/prompt-repository";
+import { generateId } from "@/lib/id";
+
+export const runtime = "edge";
 
 export async function GET(request: NextRequest) {
   try {
@@ -40,7 +42,8 @@ export async function GET(request: NextRequest) {
       sortOrder: sortOrder as PromptFilterOptions["sortOrder"],
     };
 
-    const result = fetchPrompts(options);
+    const db = getDatabaseFromRequest(request as any);
+    const result = await fetchPrompts(options, db);
 
     return NextResponse.json(result);
   } catch (error) {
@@ -79,8 +82,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const author = db
-      .prepare("SELECT id FROM User WHERE id = ?")
+    const db = getDatabaseFromRequest(request as any);
+
+    const author = await db
+      .prepare<{ id: string }>("SELECT id FROM User WHERE id = ?")
       .get(authorId);
 
     if (!author) {
@@ -92,18 +97,24 @@ export async function POST(request: NextRequest) {
 
     let categoryId: string | null = null;
     if (category) {
-        let categoryRow = db.prepare("SELECT id FROM Category WHERE name = ?").get(category) as { id: string } | undefined;
-        if (categoryRow) {
-            categoryId = categoryRow.id;
-        } else {
-            const newCategoryId = randomUUID();
-            const now = new Date().toISOString();
-            db.prepare("INSERT INTO Category (id, name, createdAt, updatedAt) VALUES (?, ?, ?, ?)").run(newCategoryId, category, now, now);
-            categoryId = newCategoryId;
-        }
+      const categoryRow = await db
+        .prepare<{ id: string }>("SELECT id FROM Category WHERE name = ?")
+        .get(category);
+      if (categoryRow) {
+        categoryId = categoryRow.id;
+      } else {
+        const newCategoryId = generateId();
+        const now = new Date().toISOString();
+        await db
+          .prepare(
+            "INSERT INTO Category (id, name, createdAt, updatedAt) VALUES (?, ?, ?, ?)"
+          )
+          .run(newCategoryId, category, now, now);
+        categoryId = newCategoryId;
+      }
     }
 
-    const created = createPrompt({
+    const created = await createPrompt({
       title,
       content,
       description,
@@ -117,7 +128,7 @@ export async function POST(request: NextRequest) {
       categoryId,
       authorId,
       tags,
-    });
+    }, db);
 
     return NextResponse.json(created, { status: 201 });
   } catch (error) {

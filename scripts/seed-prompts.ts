@@ -1,9 +1,10 @@
 import "dotenv/config";
-import { db } from "../src/lib/db";
 import fs from "fs";
 import path from "path";
 import https from "https";
-import { randomUUID } from "node:crypto";
+import { getLocalDatabase } from "../src/lib/db";
+import type { DatabaseClient } from "../src/lib/db";
+import { generateId } from "../src/lib/id";
 
 const AUTHOR_EMAIL = (process.env.SEED_USER_EMAIL ?? "hany@codexc.com").trim();
 const AUTHOR_NAME = (process.env.SEED_USER_NAME ?? "Hany alsamman").trim();
@@ -20,39 +21,39 @@ const GENERAL_CATEGORY_COLOR = process.env.SEED_PROMPTS_GENERAL_COLOR ?? "#9333E
 const SOURCE_TAG = "prompts.chat";
 const CSV_URL = process.env.SEED_PROMPTS_URL?.trim() || "https://raw.githubusercontent.com/f/awesome-chatgpt-prompts/refs/heads/main/prompts.csv";
 
-function ensureUser() {
-    const existing = db.prepare("SELECT id FROM User WHERE email = ?").get(AUTHOR_EMAIL) as { id: string } | undefined;
+async function ensureUser(db: DatabaseClient) {
+    const existing = await db.prepare("SELECT id FROM User WHERE email = ?").get(AUTHOR_EMAIL) as { id: string } | null;
     if (existing) return existing.id;
 
-    const id = randomUUID();
+    const id = generateId();
     const now = new Date().toISOString();
-    db.prepare(
+    await db.prepare(
         `INSERT INTO User (id, email, name, createdAt, updatedAt)
          VALUES (?, ?, ?, ?, ?)`
     ).run(id, AUTHOR_EMAIL, AUTHOR_NAME, now, now);
     return id;
 }
 
-function ensureCategory(name: string, description: string, color: string) {
-    const existing = db.prepare("SELECT id FROM Category WHERE name = ?").get(name) as { id: string } | undefined;
+async function ensureCategory(db: DatabaseClient, name: string, description: string, color: string) {
+    const existing = await db.prepare("SELECT id FROM Category WHERE name = ?").get(name) as { id: string } | null;
     if (existing) return existing.id;
 
-    const id = randomUUID();
+    const id = generateId();
     const now = new Date().toISOString();
-    db.prepare(
+    await db.prepare(
         `INSERT INTO Category (id, name, description, color, createdAt, updatedAt)
          VALUES (?, ?, ?, ?, ?, ?)`
     ).run(id, name, description, color, now, now);
     return id;
 }
 
-function ensureTag(name: string, color = "#6366F1") {
-    const existing = db.prepare("SELECT id FROM Tag WHERE name = ?").get(name) as { id: string } | undefined;
+async function ensureTag(db: DatabaseClient, name: string, color = "#6366F1") {
+    const existing = await db.prepare("SELECT id FROM Tag WHERE name = ?").get(name) as { id: string } | null;
     if (existing) return existing.id;
 
-    const id = randomUUID();
+    const id = generateId();
     const now = new Date().toISOString();
-    db.prepare(
+    await db.prepare(
         `INSERT INTO Tag (id, name, color, createdAt, updatedAt)
          VALUES (?, ?, ?, ?, ?)`
     ).run(id, name, color, now, now);
@@ -118,7 +119,7 @@ function fetchCsv(): Promise<string> {
     });
 }
 
-function insertPrompt({
+async function insertPrompt(db: DatabaseClient, {
     title,
     content,
     categoryId,
@@ -131,18 +132,18 @@ function insertPrompt({
     authorId: string;
     isEngineering: boolean;
 }) {
-    const existing = db.prepare("SELECT id FROM prompts WHERE title = ?").get(title) as { id: string } | undefined;
+    const existing = await db.prepare("SELECT id FROM prompts WHERE title = ?").get(title) as { id: string } | null;
     if (existing) {
         console.log(`Skipping existing prompt: ${title}`);
         return false;
     }
 
-    const promptId = randomUUID();
+    const promptId = generateId();
     const now = new Date().toISOString();
     const temperature = isEngineering ? 0.3 : 0.6;
     const notes = `Imported from prompts.chat (${isEngineering ? "engineering" : "general"})`;
 
-    db.prepare(
+    await db.prepare(
         `INSERT INTO prompts (
           id, title, content, description, targetModel,
           temperature, maxTokens, topP, frequencyPenalty, presencePenalty,
@@ -166,14 +167,14 @@ function insertPrompt({
         categoryId
     );
 
-    db.prepare(
+    await db.prepare(
         `INSERT INTO prompt_versions (
           id, title, content, description, targetModel,
           temperature, maxTokens, topP, frequencyPenalty, presencePenalty,
           notes, versionNote, createdAt, originalPromptId
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(
-        randomUUID(),
+        generateId(),
         title,
         content,
         null,
@@ -189,11 +190,15 @@ function insertPrompt({
         promptId
     );
 
-    const tagIds = [SOURCE_TAG, isEngineering ? "engineering" : "general"].map((tag) => ensureTag(tag));
+    const tagIds: string[] = [];
+    for (const tag of [SOURCE_TAG, isEngineering ? "engineering" : "general"]) {
+        const tagId = await ensureTag(db, tag);
+        tagIds.push(tagId);
+    }
     for (const tagId of tagIds) {
-        db.prepare(
+        await db.prepare(
             `INSERT INTO prompt_tags (id, promptId, tagId) VALUES (?, ?, ?)`
-        ).run(randomUUID(), promptId, tagId);
+        ).run(generateId(), promptId, tagId);
     }
 
     return true;
@@ -202,13 +207,17 @@ function insertPrompt({
 async function main() {
     console.log(`Importing prompts from ${CSV_URL} ...`);
 
-    const authorId = ensureUser();
-    const engineeringCategoryId = ensureCategory(
+    const db = getLocalDatabase();
+
+    const authorId = await ensureUser(db);
+    const engineeringCategoryId = await ensureCategory(
+        db,
         ENGINEERING_CATEGORY_NAME,
         ENGINEERING_CATEGORY_DESCRIPTION,
         ENGINEERING_CATEGORY_COLOR
     );
-    const generalCategoryId = ensureCategory(
+    const generalCategoryId = await ensureCategory(
+        db,
         GENERAL_CATEGORY_NAME,
         GENERAL_CATEGORY_DESCRIPTION,
         GENERAL_CATEGORY_COLOR
@@ -234,7 +243,7 @@ async function main() {
 
     let inserted = 0;
     for (const row of rows) {
-        const success = insertPrompt({
+        const success = await insertPrompt(db, {
             title: row.title,
             content: row.content,
             categoryId: row.isEngineering ? engineeringCategoryId : generalCategoryId,
@@ -245,13 +254,12 @@ async function main() {
     }
 
     console.log(`Imported ${inserted} prompts (source: prompts.chat).`);
+
+    db.close?.();
 }
 
 main()
     .catch((error) => {
         console.error("Failed to import prompts", error);
         process.exit(1);
-    })
-    .finally(() => {
-        db.close();
     });

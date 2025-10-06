@@ -1,6 +1,7 @@
 import "dotenv/config";
-import { randomUUID } from "node:crypto";
-import { db } from "../src/lib/db";
+import { generateId } from "../src/lib/id";
+import { getLocalDatabase } from "../src/lib/db";
+import type { DatabaseClient } from "../src/lib/db";
 
 const TIMESTAMP = () => new Date().toISOString();
 
@@ -25,7 +26,7 @@ const DRIVER_USER = {
   name: (process.env.SEED_USER_NAME ?? "Hany alsamman").trim(),
 };
 
-function clearTables() {
+async function clearTables(db: DatabaseClient) {
   const tables = [
     "prompt_tags",
     "ratings",
@@ -37,31 +38,31 @@ function clearTables() {
   ];
 
   for (const table of tables) {
-    db.prepare(`DELETE FROM ${table}`).run();
+    await db.prepare(`DELETE FROM ${table}`).run();
   }
 }
 
-function insertUser() {
-  const id = randomUUID();
+async function insertUser(db: DatabaseClient) {
+  const id = generateId();
   const now = TIMESTAMP();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO User (id, email, name, createdAt, updatedAt)
      VALUES (?, ?, ?, ?, ?)`
   ).run(id, DRIVER_USER.email, DRIVER_USER.name, now, now);
   return id;
 }
 
-function insertCategory(name: string, description: string, color: string) {
-  const id = randomUUID();
+async function insertCategory(db: DatabaseClient, name: string, description: string, color: string) {
+  const id = generateId();
   const now = TIMESTAMP();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO Category (id, name, description, color, createdAt, updatedAt)
      VALUES (?, ?, ?, ?, ?, ?)`
   ).run(id, name, description, color, now, now);
   return id;
 }
 
-function insertTemplatePrompt({
+async function insertTemplatePrompt(db: DatabaseClient, {
   title,
   content,
   description,
@@ -78,10 +79,10 @@ function insertTemplatePrompt({
   model?: string;
   tags?: string[];
 }) {
-  const promptId = randomUUID();
+  const promptId = generateId();
   const now = TIMESTAMP();
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO prompts (
       id, title, content, description, targetModel,
       temperature, maxTokens, topP, frequencyPenalty, presencePenalty,
@@ -107,14 +108,14 @@ function insertTemplatePrompt({
     categoryId
   );
 
-  db.prepare(
+  await db.prepare(
     `INSERT INTO prompt_versions (
       id, title, content, description, targetModel,
       temperature, maxTokens, topP, frequencyPenalty, presencePenalty,
       notes, versionNote, createdAt, originalPromptId
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    randomUUID(),
+    generateId(),
     title,
     content,
     description,
@@ -131,29 +132,29 @@ function insertTemplatePrompt({
   );
 
   for (const tag of tags) {
-    const tagId = ensureTag(tag);
-    db.prepare(
+    const tagId = await ensureTag(db, tag);
+    await db.prepare(
       `INSERT INTO prompt_tags (id, promptId, tagId)
        VALUES (?, ?, ?)`
-    ).run(randomUUID(), promptId, tagId);
+    ).run(generateId(), promptId, tagId);
   }
 }
 
-function ensureTag(name: string) {
-  const existing = db.prepare("SELECT id FROM Tag WHERE name = ?").get(name) as { id: string } | undefined;
+async function ensureTag(db: DatabaseClient, name: string) {
+  const existing = await db.prepare("SELECT id FROM Tag WHERE name = ?").get(name) as { id: string } | null;
   if (existing) return existing.id;
 
-  const id = randomUUID();
+  const id = generateId();
   const now = TIMESTAMP();
-  db.prepare(
+  await db.prepare(
     `INSERT INTO Tag (id, name, color, createdAt, updatedAt)
      VALUES (?, ?, ?, ?, ?)`
   ).run(id, name, "#6366F1", now, now);
   return id;
 }
 
-function seedEngineeringTemplates(authorId: string, categories: Record<string, string>) {
-  insertTemplatePrompt({
+async function seedEngineeringTemplates(db: DatabaseClient, authorId: string, categories: Record<string, string>) {
+  await insertTemplatePrompt(db, {
     title: "Code review risk radar",
     description: "Staff engineer style code review focused on regressions and missing tests.",
     content:
@@ -163,7 +164,7 @@ function seedEngineeringTemplates(authorId: string, categories: Record<string, s
     tags: ["code-review", "quality"],
   });
 
-  insertTemplatePrompt({
+  await insertTemplatePrompt(db, {
     title: "Architecture trade study",
     description: "Compare implementation options with pros/cons and recommendation.",
     content:
@@ -173,7 +174,7 @@ function seedEngineeringTemplates(authorId: string, categories: Record<string, s
     tags: ["architecture", "trade-off"],
   });
 
-  insertTemplatePrompt({
+  await insertTemplatePrompt(db, {
     title: "Migration runbook",
     description: "Draft phased migration steps with rollback.",
     content:
@@ -184,48 +185,51 @@ function seedEngineeringTemplates(authorId: string, categories: Record<string, s
   });
 }
 
-function seedModelsIfPresent() {
-  const tableExists = db
+async function seedModelsIfPresent(db: DatabaseClient) {
+  const tableExists = await db
     .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='Model'")
-    .get() as { name?: string } | undefined;
+    .get() as { name?: string } | null;
 
   if (!tableExists) {
     console.warn("Model table not found; skipping model seed.");
     return;
   }
 
-  db.prepare("DELETE FROM Model").run();
+  await db.prepare("DELETE FROM Model").run();
   const now = TIMESTAMP();
   for (const model of SUPPORTED_MODELS) {
-    db.prepare(
+    await db.prepare(
       `INSERT INTO Model (id, name, provider, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?)`
-    ).run(randomUUID(), model.name, model.provider, now, now);
+    ).run(generateId(), model.name, model.provider, now, now);
   }
 }
 
 async function main() {
   console.log("Seeding database with baseline data...");
-  clearTables();
+  const db = getLocalDatabase();
 
-  seedModelsIfPresent();
-  const authorId = insertUser();
+  try {
+    await clearTables(db);
+    await seedModelsIfPresent(db);
+    const authorId = await insertUser(db);
 
-  const categoryMap: Record<string, string> = {};
-  for (const category of ENGINEERING_CATEGORIES) {
-    categoryMap[category.name] = insertCategory(category.name, category.description, category.color);
+    const categoryMap: Record<string, string> = {};
+    for (const category of ENGINEERING_CATEGORIES) {
+      categoryMap[category.name] = await insertCategory(db, category.name, category.description, category.color);
+    }
+
+    await seedEngineeringTemplates(db, authorId, categoryMap);
+
+    console.log("Seed completed");
+  } finally {
+    db.close?.();
   }
 
-  seedEngineeringTemplates(authorId, categoryMap);
-
-  console.log("Seed completed");
 }
 
 main()
   .catch((error) => {
     console.error("Seed failed", error);
     process.exit(1);
-  })
-  .finally(() => {
-    db.close();
   });

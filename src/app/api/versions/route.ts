@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getDatabaseFromRequest } from "@/lib/db";
 import {
   createPromptVersion,
   fetchPromptById,
   fetchPromptVersions,
 } from "@/lib/prompt-repository";
+
+export const runtime = "edge";
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,7 +36,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if original prompt exists
-    const originalPrompt = fetchPromptById(originalPromptId);
+    const db = getDatabaseFromRequest(request as any);
+
+    const originalPrompt = await fetchPromptById(originalPromptId, db);
 
     if (!originalPrompt) {
       return NextResponse.json(
@@ -42,7 +47,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const newVersion = createPromptVersion({
+    const newVersion = await createPromptVersion({
       originalPromptId,
       title,
       content,
@@ -55,7 +60,7 @@ export async function POST(request: NextRequest) {
       presencePenalty: presencePenalty ? parseFloat(presencePenalty) : null,
       notes,
       versionNote,
-    });
+    }, db);
 
     if (!newVersion) {
       return NextResponse.json(
@@ -81,7 +86,8 @@ export async function GET(request: NextRequest) {
 
     if (originalPromptId) {
       // Get versions for a specific prompt
-      const versions = fetchPromptVersions(originalPromptId);
+      const db = getDatabaseFromRequest(request as any);
+      const versions = await fetchPromptVersions(originalPromptId, db);
 
       return NextResponse.json(versions);
     } else {

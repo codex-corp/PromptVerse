@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getDatabaseFromRequest } from "@/lib/db";
 import {
   deletePrompt,
   fetchPromptById,
   updatePrompt,
 } from "@/lib/prompt-repository";
+
+export const runtime = "edge";
 
 export async function GET(
   request: NextRequest,
@@ -12,7 +15,8 @@ export async function GET(
   try {
     const { id } = await params;
 
-    const prompt = fetchPromptById(id);
+    const db = getDatabaseFromRequest(request as any);
+    const prompt = await fetchPromptById(id, db);
 
     if (!prompt) {
       return NextResponse.json(
@@ -55,7 +59,8 @@ export async function PUT(
       viewCount,
     } = body;
 
-    const updated = updatePrompt(id, {
+    const db = getDatabaseFromRequest(request as any);
+    const updated = await updatePrompt(id, {
       title,
       content,
       description,
@@ -76,7 +81,7 @@ export async function PUT(
       tags,
       isFavorite,
       viewCount: viewCount !== undefined && viewCount !== null ? parseInt(viewCount, 10) : undefined,
-    });
+    }, db);
 
     if (!updated) {
       return NextResponse.json(
@@ -102,7 +107,8 @@ export async function DELETE(
   try {
     const { id } = await params;
 
-    const removed = deletePrompt(id);
+    const db = getDatabaseFromRequest(request as any);
+    const removed = await deletePrompt(id, db);
 
     if (!removed) {
       return NextResponse.json(

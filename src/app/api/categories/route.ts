@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomUUID } from "node:crypto";
-import { db } from "@/lib/db";
+import { getDatabaseFromRequest } from "@/lib/db";
+import { generateId } from "@/lib/id";
+
+export const runtime = "edge";
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const includeCounts = searchParams.get("includeCounts") === "true";
 
+    const db = getDatabaseFromRequest(request as any);
+
     if (includeCounts) {
       // Get categories with prompt counts
-      const categories = db
+      const categories = await db
         .prepare(`
           SELECT c.id, c.name, c.description, c.color, c.createdAt, c.updatedAt,
                  COUNT(p.id) AS count
@@ -20,9 +24,10 @@ export async function GET(request: NextRequest) {
         `)
         .all();
 
-      const totalPrompts = db
-        .prepare("SELECT COUNT(*) as total FROM prompts")
-        .get().total as number;
+      const totalRow = await db
+        .prepare<{ total: number }>("SELECT COUNT(*) as total FROM prompts")
+        .get();
+      const totalPrompts = totalRow?.total ?? 0;
 
       return NextResponse.json({
         categories,
@@ -30,7 +35,7 @@ export async function GET(request: NextRequest) {
       });
     } else {
       // Get simple categories list
-      const categories = db
+      const categories = await db
         .prepare(`
           SELECT id, name, description, color, createdAt, updatedAt
           FROM Category
@@ -62,8 +67,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if category already exists
-    const existingCategory = db
-      .prepare("SELECT id FROM Category WHERE name = ?")
+    const db = getDatabaseFromRequest(request as any);
+
+    const existingCategory = await db
+      .prepare<{ id: string }>("SELECT id FROM Category WHERE name = ?")
       .get(name);
 
     if (existingCategory) {
@@ -74,15 +81,15 @@ export async function POST(request: NextRequest) {
     }
 
     const now = new Date().toISOString();
-    const id = randomUUID();
+    const id = generateId();
 
-    db.prepare(
+    await db.prepare(
       `INSERT INTO Category (id, name, description, color, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, ?, ?)`
     ).run(id, name, description ?? null, color ?? null, now, now);
 
-    const newCategory = db
-      .prepare(
+    const newCategory = await db
+      .prepare<{ id: string; name: string; description: string | null; color: string | null; createdAt: string; updatedAt: string }>(
         "SELECT id, name, description, color, createdAt, updatedAt FROM Category WHERE id = ?"
       )
       .get(id);

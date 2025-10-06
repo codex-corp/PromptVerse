@@ -1,6 +1,6 @@
 import 'dotenv/config'
-import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '@prisma/client'
+import { generateId } from '../src/lib/id'
 
 const prisma = new PrismaClient()
 
@@ -151,7 +151,7 @@ async function seedModelsIfPresent() {
   for (const model of SUPPORTED_MODELS) {
     await prisma.$executeRaw`
       INSERT INTO "Model" ("id", "name", "provider", "createdAt", "updatedAt")
-      VALUES (${randomUUID()}, ${model.name}, ${model.provider}, ${timestamp}, ${timestamp})
+      VALUES (${generateId()}, ${model.name}, ${model.provider}, ${timestamp}, ${timestamp})
     `
   }
 }

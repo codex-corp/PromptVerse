@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getDatabaseFromRequest } from "@/lib/db";
+
+export const runtime = "edge";
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,11 +15,12 @@ export async function GET(request: NextRequest) {
       ORDER BY datetime(createdAt) ASC
     `;
 
+    const db = getDatabaseFromRequest(request as any);
     const stmt = limit
       ? db.prepare(`${baseQuery} LIMIT ?`)
       : db.prepare(baseQuery);
 
-    const users = limit ? stmt.all(limit) : stmt.all();
+    const users = limit ? await stmt.all(limit) : await stmt.all();
 
     return NextResponse.json({ users });
   } catch (error) {

@@ -1,0 +1,24 @@
+
+name = "promptverse"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Static asset output from Next-on-Pages build
+pages_build_output_dir = ".vercel/output/static"
+
+[observability]
+enabled = true
+
+[env.production]
+compatibility_flags = ["nodejs_compat"]
+
+# D1 Database binding
+[[d1_databases]]
+binding = "promptverse_db"
+database_name = "promptverse-db"
+database_id = "95026327-75e5-4534-ba83-5d9c8b5df0ec"
+
+# KV namespace for caching (optional but recommended)
+[[kv_namespaces]]
+binding = "promptverse_cache"
+id = "839e3add7bda4fbc9c78f6ed57caaf2e"
