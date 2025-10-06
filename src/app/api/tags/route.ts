@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDatabaseFromRequest } from "@/lib/db";
+import { getDatabaseClient } from "@/lib/db";
+import { getRequestContext } from "@cloudflare/next-on-pages";
 import { generateId } from "@/lib/id";
 
 
-export const runtime = "edge";
+export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,7 +12,9 @@ export async function GET(request: NextRequest) {
     const includeCounts = searchParams.get("includeCounts") === "true";
     const search = searchParams.get("search") || "";
 
-    const db = getDatabaseFromRequest(request as any);
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+
+    const db = getDatabaseClient(env);
 
     if (includeCounts) {
       // Get tags with prompt counts
@@ -63,7 +66,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if tag already exists
-    const db = getDatabaseFromRequest(request as any);
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+
+    const db = getDatabaseClient(env);
 
     const existingTag = await db
       .prepare<{ id: string }>("SELECT id FROM Tag WHERE name = ?")

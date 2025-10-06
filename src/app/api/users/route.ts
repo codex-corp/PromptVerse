@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDatabaseFromRequest } from "@/lib/db";
+import { getDatabaseClient } from "@/lib/db";
+import { getRequestContext } from "@cloudflare/next-on-pages";
 
 
-export const runtime = "edge";
+export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,7 +17,8 @@ export async function GET(request: NextRequest) {
       ORDER BY datetime(createdAt) ASC
     `;
 
-    const db = getDatabaseFromRequest(request as any);
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+    const db = getDatabaseClient(env);
     const stmt = limit
       ? db.prepare(`${baseQuery} LIMIT ?`)
       : db.prepare(baseQuery);

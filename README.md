@@ -17,33 +17,47 @@ PromptVerse is an open-source workspace for discovering, organizing, and transfo
 # Install dependencies
 npm install
 
-# Create a .env file and set the DATABASE_URL
-echo "DATABASE_URL=\"file:./db/dev.db\"" > .env
+# Local offline dev: create .env.local with SQLite path and Node runtime
+echo -e "DATABASE_URL=file:./db/dev.db\nNEXT_RUNTIME=nodejs" > .env.local
 
-# Create the database and apply the schema
-npx prisma migrate dev --name init
+# Seed local SQLite and create tables (applies schema automatically)
+npm run db:seed:local
 
-# Seed sample data (optional)
-npm run db:seed
-
-# Start the development server with Node + Next.js
-npm run dev
+# Start local development (Node + Next.js)
+npm run dev:local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) and explore the seeded workspace or connect your own SQLite database by updating `DATABASE_URL`.
+Open http://localhost:3000 and explore the seeded workspace. You can change the SQLite path by updating `DATABASE_URL` in `.env.local`.
 
 ### 🌱 Seed Baseline Data
 
 Run one of the following to load the default user (`Hany alsamman <hany@codexc.com>`), engineering categories, models, and starter templates:
 
 ```bash
-npm run db:seed        # uses scripts/seed.ts (better-sqlite3)
-npx prisma db seed     # uses prisma/seed.ts (Prisma Client)
+npm run db:seed:local   # local SQLite seed (applies schema and data)
+npm run db:seed         # uses scripts/seed.ts (better-sqlite3)
+npx prisma db seed      # uses prisma/seed.ts (Prisma Client)
 ```
 
 Both commands produce the same baseline dataset so the transformer’s template gallery and model picker are ready to go.
 
 Set `SEED_USER_EMAIL` / `SEED_USER_NAME` in `.env` to customise the default account used during seeding.
+
+### ☁️ Cloudflare Preview & Deploy
+
+PromptVerse supports Cloudflare Pages with the edge runtime and D1. Preview and production use the same remote D1 and KV bindings configured in `wrangler.toml`.
+
+```bash
+# Preview against remote D1/KV (deploys a Pages preview on branch "preview")
+npm run preview
+
+# Deploy to production
+npm run deploy
+```
+
+- Configuration lives in `wrangler.toml` (top-level and `[env.preview]` bindings).
+- API routes automatically use Edge/D1 on Cloudflare and Node/SQLite locally, controlled by `NEXT_RUNTIME`.
+- KV binding name is `promptverse_kv`; D1 binding name is `promptverse_d1_db`.
 
 ## 🔌 Configure the Transformer Provider
 
@@ -118,7 +132,7 @@ The output is always Markdown so you can paste it directly into ChatGPT or any O
 - **Framework**: Next.js 15 (App Router) + TypeScript 5 + React 19
 - **Styling**: Tailwind CSS 4 + shadcn/ui + Lucide icons
 - **State & Forms**: React Hook Form, Zustand, TanStack Query
-- **Backend**: SQLite + better-sqlite3 data layer, REST APIs, Socket.IO ready server bootstrap
+- **Backend**: SQLite (local dev) + D1 (Cloudflare) via a unified async data layer, REST APIs, Socket.IO-ready server bootstrap
 - **Content Tools**: MDX Editor, React Markdown, Syntax Highlighter
 - **Testing & Quality**: ESLint, TypeScript strictness, automated builds
 

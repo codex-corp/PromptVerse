@@ -1,4 +1,6 @@
 import "dotenv/config";
+import fs from "node:fs";
+import path from "node:path";
 import { generateId } from "../src/lib/id";
 import { getLocalDatabase } from "../src/lib/db";
 import type { DatabaseClient } from "../src/lib/db";
@@ -208,6 +210,20 @@ async function seedModelsIfPresent(db: DatabaseClient) {
 async function main() {
   console.log("Seeding database with baseline data...");
   const db = getLocalDatabase();
+
+  // Apply migration schema if tables don't exist
+  try {
+    const migrationPath = path.resolve(process.cwd(), "prisma/migrations/20250929235901_init/migration.sql");
+    const migrationSql = fs.readFileSync(migrationPath, "utf-8");
+    for (const stmt of migrationSql.split(";")) {
+      const sql = stmt.trim();
+      if (sql) {
+        await db.prepare(sql).run();
+      }
+    }
+  } catch (e) {
+    console.warn("Skipping migration apply:", e);
+  }
 
   try {
     await clearTables(db);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDatabaseFromRequest } from "@/lib/db";
+import { getDatabaseClient } from "@/lib/db";
+import { getRequestContext } from "@cloudflare/next-on-pages";
 import {
   createPromptVersion,
   fetchPromptById,
@@ -7,7 +8,7 @@ import {
 } from "@/lib/prompt-repository";
 
 
-export const runtime = "edge";
+export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,7 +38,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if original prompt exists
-    const db = getDatabaseFromRequest(request as any);
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+
+    const db = getDatabaseClient(env);
 
     const originalPrompt = await fetchPromptById(originalPromptId, db);
 
@@ -87,7 +90,9 @@ export async function GET(request: NextRequest) {
 
     if (originalPromptId) {
       // Get versions for a specific prompt
-      const db = getDatabaseFromRequest(request as any);
+      let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+
+    const db = getDatabaseClient(env);
       const versions = await fetchPromptVersions(originalPromptId, db);
 
       return NextResponse.json(versions);

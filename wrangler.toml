@@ -11,11 +11,23 @@ enabled = true
 compatibility_flags = ["nodejs_compat"]
 
 [[d1_databases]]
-binding = "DB"
-database_name = "promptverse-db-local"
-database_id = "dd03f7fc-70c1-4fc5-b23d-5f6fc3168aa4"
-preview_database_id = "dd03f7fc-70c1-4fc5-b23d-5f6fc3168aa4"
+binding = "promptverse_d1_db"
+database_name = "promptverse-db"
+database_id = "95026327-75e5-4534-ba83-5d9c8b5df0ec"
+
 
 [[kv_namespaces]]
-binding = "CACHE"
+binding = "promptverse_kv"
+id = "839e3add7bda4fbc9c78f6ed57caaf2e"
+
+[env.preview]
+compatibility_flags = ["nodejs_compat"]
+
+[[env.preview.d1_databases]]
+binding = "promptverse_d1_db"
+database_name = "promptverse-db"
+database_id = "95026327-75e5-4534-ba83-5d9c8b5df0ec"
+
+[[env.preview.kv_namespaces]]
+binding = "promptverse_kv"
 id = "839e3add7bda4fbc9c78f6ed57caaf2e"

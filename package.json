@@ -11,8 +11,11 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:seed-prompts": "tsx scripts/seed-prompts.ts",
     "postinstall": "prisma generate",
-    "preview": "npm run build:cloudflare && npx wrangler pages dev .vercel/output/static --compatibility-flag=nodejs_compat --d1=DB --kv=CACHE",
-    "deploy": "npm run build:cloudflare && wrangler pages deploy .vercel/output/static"
+    "preview": "npm run build:cloudflare && wrangler pages deploy .vercel/output/static --branch preview",
+    "deploy": "npm run build:cloudflare && wrangler pages deploy .vercel/output/static",
+    "dev:local": "bash -c 'set -a; source .env.local; set +a; CHOKIDAR_USEPOLLING=true next dev'",
+    "db:seed:local": "bash -c 'set -a; source .env.local; set +a; tsx scripts/seed.ts'",
+    "db:seed-prompts:local": "bash -c 'set -a; source .env.local; set +a; tsx scripts/seed-prompts.ts'"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

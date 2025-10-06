@@ -138,9 +138,13 @@ function createLocalDatabase(): SQLiteDatabase {
     throw new Error("SQLite database is only available in a Node.js runtime");
   }
 
-  const nodeRequire = new Function("module", "return require").call(null) as NodeRequireFunction;
+  // Use Node's createRequire to avoid eval/new Function in Node runtime
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { createRequire } = require("node:module");
+  const nodeRequire: NodeRequireFunction = createRequire(process.cwd() + "/");
   const Database = nodeRequire("better-sqlite3");
-  const path = nodeRequire("path") as typeof import("node:path");
+  const path = nodeRequire("node:path") as typeof import("node:path");
+  const fs = nodeRequire("node:fs") as typeof import("node:fs");
 
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
@@ -153,7 +157,8 @@ function createLocalDatabase(): SQLiteDatabase {
     dbPath = path.resolve(process.cwd(), relativePath);
   }
 
-  const instance = new Database(dbPath, { fileMustExist: true }) as SQLiteDatabase & {
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const instance = new Database(dbPath, { fileMustExist: false }) as SQLiteDatabase & {
     pragma?: (pragma: string) => void;
   };
 
@@ -201,26 +206,25 @@ export function getD1FromEnv(env: Record<string, any> | undefined | null): Datab
 }
 
 export function getDatabaseClient(env?: Record<string, any> | null): DatabaseClient {
-  const isEdgeRuntime = typeof (globalThis as any).EdgeRuntime === "string";
+  const isNodeRuntime =
+    typeof process !== "undefined" && process.release?.name === "node";
 
-  const bindingEnv = env ?? null;
+  const bindingEnv =
+    env ??
+    ((globalThis as any).__ENV__ as Record<string, any> | null) ??
+    ((globalThis as any).env as Record<string, any> | null) ??
+    null;
+
   const binding = resolveD1Binding(bindingEnv);
 
   if (binding) {
     return getD1FromEnv(bindingEnv!);
   }
 
-  if (isEdgeRuntime) {
-    const globalEnv =
-      (globalThis as any).__ENV__ ?? (globalThis as any).env ?? null;
-    const globalBinding = resolveD1Binding(globalEnv);
-
-    if (globalBinding) {
-      return getD1FromEnv(globalEnv);
-    }
-
+  if (!isNodeRuntime) {
+    // Non-Node (Workers/Edge) must use D1 bindings; do not fallback to local SQLite.
     throw new Error(
-      "D1 environment bindings are not available in the edge runtime. Make sure the binding is configured (wrangler --d1 promptverse_db).",
+      "D1 binding not found in non-Node runtime. Ensure wrangler.toml defines d1_databases and the binding name (e.g., 'promptverse_db') is available to the runtime."
     );
   }
 

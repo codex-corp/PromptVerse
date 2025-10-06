@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDatabaseFromRequest } from "@/lib/db";
+import { getDatabaseClient } from "@/lib/db";
+import { getRequestContext } from "@cloudflare/next-on-pages";
 import { generateId } from "@/lib/id";
 
 interface RatingResponse {
@@ -13,7 +14,7 @@ interface RatingResponse {
 }
 
 
-export const runtime = "edge";
+export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,7 +22,9 @@ export async function GET(request: NextRequest) {
     const promptId = searchParams.get("promptId");
     const userId = searchParams.get("userId");
 
-    const db = getDatabaseFromRequest(request as any);
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+
+    const db = getDatabaseClient(env);
 
     if (promptId) {
       // Get ratings for a specific prompt
@@ -106,7 +109,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if prompt exists
-    const db = getDatabaseFromRequest(request as any);
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+
+    const db = getDatabaseClient(env);
 
     const prompt = await db
       .prepare<{ id: string }>("SELECT id FROM prompts WHERE id = ?")

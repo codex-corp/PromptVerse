@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDatabaseFromRequest } from "@/lib/db";
+import { getDatabaseClient } from "@/lib/db";
+import { getRequestContext } from "@cloudflare/next-on-pages";
 import {
   createPrompt,
   fetchPrompts,
@@ -7,19 +8,19 @@ import {
 } from "@/lib/prompt-repository";
 import { generateId } from "@/lib/id";
 
-export const runtime = "edge";
+export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    
+
     // Extract query parameters
     const search = searchParams.get("search") || "";
     const categories = searchParams.get("categories")?.split(",").filter(Boolean) || [];
     const tags = searchParams.get("tags")?.split(",").filter(Boolean) || [];
     const targetModels = searchParams.get("models")?.split(",").filter(Boolean) || [];
     const rating = searchParams.get("rating") ? parseInt(searchParams.get("rating")!) : null;
-    const isFavorite = searchParams.get("favorite") === "true" ? true : 
+    const isFavorite = searchParams.get("favorite") === "true" ? true :
                       searchParams.get("favorite") === "false" ? false : null;
     const dateRange = searchParams.get("dateRange") || "all";
     const page = parseInt(searchParams.get("page") || "1");
@@ -42,7 +43,8 @@ export async function GET(request: NextRequest) {
       sortOrder: sortOrder as PromptFilterOptions["sortOrder"],
     };
 
-    const db = getDatabaseFromRequest(request as any);
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+    const db = getDatabaseClient(env);
     const result = await fetchPrompts(options, db);
 
     return NextResponse.json(result);
@@ -82,7 +84,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const db = getDatabaseFromRequest(request as any);
+    let env: any; try { env = getRequestContext().env; } catch { env = undefined; }
+    const db = getDatabaseClient(env);
 
     const author = await db
       .prepare<{ id: string }>("SELECT id FROM User WHERE id = ?")
