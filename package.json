@@ -9,7 +9,6 @@
     "lint": "next lint",
     "db:seed": "tsx scripts/seed.ts",
     "db:seed-prompts": "tsx scripts/seed-prompts.ts",
-    "build:pages": "next build && next export",
     "postinstall": "prisma generate"
   },
   "dependencies": {
