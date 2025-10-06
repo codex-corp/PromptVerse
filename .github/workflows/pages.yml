@@ -37,7 +37,8 @@ jobs:
       - name: Build static site
         env:
           NEXT_DEPLOY_TARGET: github-pages
-        run: npm run build
+          DATABASE_URL: file:db/custom.db
+        run: npm run build:pages
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
