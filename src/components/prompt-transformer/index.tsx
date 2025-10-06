@@ -7,9 +7,29 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { AlertCircle, Copy, Download, ExternalLink, Plus, RotateCcw, X, ChevronDown, HelpCircle } from "lucide-react";
+import {
+    AlertCircle,
+    Copy,
+    Download,
+    ExternalLink,
+    Plus,
+    RotateCcw,
+    X,
+    ChevronDown,
+    HelpCircle,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import type { Components } from "react-markdown";
+import type { HTMLAttributes, ReactNode } from "react";
+
+type MarkdownCodeProps = HTMLAttributes<HTMLElement> & {
+    inline?: boolean;
+    className?: string;
+    children?: ReactNode;
+    node?: unknown;
+};
+
 import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { toast } from "sonner";
 import { driver } from "driver.js";
@@ -17,15 +37,22 @@ import "driver.js/dist/driver.css";
 
 import { MARKDOWN_PROMPT, JSON_PROMPT, CHATGPT_PROMPT } from "./prompts";
 import { MODE_DEFINITIONS, deriveModeSuggestions, loadAnalyticsFromStorage, persistAnalytics } from "./mode-guidance";
-import { extractModesFromPrompt, toRTF } from "./utils";
+import {
+    extractModesFromPrompt,
+    toRTF,
+    getFileExtension,
+    formatFileSize,
+    readFileContentWithSanitization,
+} from "./utils";
 import type {
     ModeAnalyticsState,
     ModeSuggestion,
     PromptProfile,
     PromptTransformerProps,
     TransformResult,
-    TransformedPrompt,
+    TransformedPrompt
 } from "./types";
+
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -36,6 +63,33 @@ import {
 } from "@/components/ui/dropdown-menu";
 import TemplatesPanel from "./templates-panel";
 import { ENGINEERING_TEMPLATE_CATEGORIES, ENGINEERING_TEMPLATES_FLAT, type EngineeringTemplate } from "./templates-data";
+import { cn } from "@/lib/utils";
+import { PromptTransformerFileAttachments, type UploadedFileState } from "./file-attachments";
+
+const ACCEPTED_EXTENSIONS = [".py", ".php", ".js", ".ts", ".html", ".css", ".md", ".txt", ".json", ".csv"];
+const MAX_FILES = 10;
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_CONTEXT_SIZE = 100 * 1024;
+
+const enforceContextLimit = (files: UploadedFileState[]) => {
+    const sortedByAdded = [...files].sort((a, b) => a.addedAt - b.addedAt);
+    let total = sortedByAdded.reduce((sum, file) => sum + (file.content?.length ?? 0), 0);
+    const removalSet = new Set<string>();
+
+    while (total > MAX_CONTEXT_SIZE && sortedByAdded.length) {
+        const oldest = sortedByAdded.shift();
+        if (!oldest) {
+            break;
+        }
+        removalSet.add(oldest.id);
+        total -= oldest.content?.length ?? 0;
+    }
+
+    const nextFiles = files.filter((file) => !removalSet.has(file.id));
+    const removedFiles = files.filter((file) => removalSet.has(file.id));
+
+    return { nextFiles, removedFiles };
+};
 
 export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded }: PromptTransformerProps) {
     const [inputText, setInputText] = useState("");
@@ -52,6 +106,7 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
     const [forcedModes, setForcedModes] = useState<string[]>([]);
     const [modeAnalytics, setModeAnalytics] = useState<ModeAnalyticsState>(() => loadAnalyticsFromStorage());
     const abortControllerRef = useRef<AbortController | null>(null);
+    const [uploadedFiles, setUploadedFiles] = useState<UploadedFileState[]>([]);
 
     const topModes = useMemo(() => {
         const entries = Object.entries(modeAnalytics.modeCounts);
@@ -252,7 +307,7 @@ const HANDOFF_TARGETS: Array<{
                         title: "Guided modes",
                         description: "AI suggests reasoning modes like /STEP-BY-STEP or /CHECKLIST. Toggle to pin them into the final prompt.",
                         side: "left" as const,
-                        align: "center" as const,
+                        align: "start" as const,
                     },
                 },
                 {
@@ -261,7 +316,7 @@ const HANDOFF_TARGETS: Array<{
                         title: "Session insights",
                         description: "See which modes the team relies on most so you can standardise effective workflows.",
                         side: "left" as const,
-                        align: "end" as const,
+                        align: "start" as const,
                     },
                 }
             );
@@ -284,6 +339,309 @@ const HANDOFF_TARGETS: Array<{
 
         tour.drive();
     }, [targetProfile]);
+
+    const getFileExtension = useCallback((fileName: string) => {
+        const dotIndex = fileName.lastIndexOf(".");
+        return dotIndex >= 0 ? fileName.slice(dotIndex).toLowerCase() : "";
+    }, []);
+
+    const getUniqueFileName = useCallback((fileName: string, existingNames: Set<string>) => {
+        if (!existingNames.has(fileName)) {
+            return fileName;
+        }
+
+        const dotIndex = fileName.lastIndexOf(".");
+        const baseName = dotIndex >= 0 ? fileName.slice(0, dotIndex) : fileName;
+        const extension = dotIndex >= 0 ? fileName.slice(dotIndex) : "";
+
+        let counter = 1;
+        let candidate = `${baseName} (${counter})${extension}`;
+
+        while (existingNames.has(candidate)) {
+            counter += 1;
+            candidate = `${baseName} (${counter})${extension}`;
+        }
+
+        return candidate;
+    }, []);
+
+    const handleFilesAdded = useCallback(
+        (incoming: FileList | File[]) => {
+            const candidates = Array.from(incoming);
+            if (!candidates.length) return;
+
+            let remainingSlots = MAX_FILES - uploadedFiles.length;
+            if (remainingSlots <= 0) {
+                toast.error(`You can upload up to ${MAX_FILES} files.`);
+                return;
+            }
+
+            const uniqueNames = new Set(uploadedFiles.map((file) => file.name));
+            const accepted: UploadedFileState[] = [];
+            const invalidTypes: string[] = [];
+            const oversized: string[] = [];
+            let limitWarning = false;
+            const timestamp = Date.now();
+
+            candidates.forEach((file) => {
+                if (remainingSlots <= 0) {
+                    limitWarning = true;
+                    return;
+                }
+
+                const extension = getFileExtension(file.name);
+                if (!ACCEPTED_EXTENSIONS.includes(extension)) {
+                    invalidTypes.push(file.name);
+                    return;
+                }
+
+                if (file.size > MAX_FILE_SIZE) {
+                    oversized.push(file.name);
+                    return;
+                }
+
+                const uniqueName = getUniqueFileName(file.name, uniqueNames);
+                uniqueNames.add(uniqueName);
+
+                accepted.push({
+                    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+                    file,
+                    name: uniqueName,
+                    size: file.size,
+                    previewOpen: false,
+                    status: "idle",
+                    preview: undefined,
+                    content: undefined,
+                    addedAt: timestamp + accepted.length,
+                });
+                remainingSlots -= 1;
+            });
+
+            if (invalidTypes.length) {
+                toast.error(`Unsupported file type: ${invalidTypes.join(", ")}`);
+            }
+
+            if (oversized.length) {
+                toast.error(`File too large (max 5MB): ${oversized.join(", ")}`);
+            }
+
+            if (limitWarning) {
+                toast.error(`Only ${MAX_FILES} files can be uploaded at a time.`);
+            }
+
+            if (accepted.length) {
+                setUploadedFiles((prev) => [...prev, ...accepted]);
+                toast.success(
+                    `${accepted.length} file${accepted.length === 1 ? "" : "s"} added to the prompt context.`,
+                    { duration: 2500 }
+                );
+            }
+        },
+        [getFileExtension, getUniqueFileName, uploadedFiles]
+    );
+
+    const handleRemoveFile = useCallback((fileId: string) => {
+        setUploadedFiles((prev) => prev.filter((file) => file.id !== fileId));
+        toast.success("File removed from prompt context.");
+    }, []);
+
+    const handleRemoveAll = useCallback(() => {
+        if (uploadedFiles.length === 0) {
+            return;
+        }
+        setUploadedFiles([]);
+        toast.success("All files removed from prompt context.");
+    }, [uploadedFiles]);
+
+    const handleTogglePreview = useCallback(
+        (fileId: string) => {
+            const target = uploadedFiles.find((file) => file.id === fileId);
+            if (!target) {
+                return;
+            }
+
+            const shouldOpen = !target.previewOpen;
+
+            if (!shouldOpen) {
+                setUploadedFiles((prev) =>
+                    prev.map((file) => (file.id === fileId ? { ...file, previewOpen: false } : file))
+                );
+                return;
+            }
+
+            if (target.preview) {
+                setUploadedFiles((prev) =>
+                    prev.map((file) => (file.id === fileId ? { ...file, previewOpen: true } : file))
+                );
+                return;
+            }
+
+            setUploadedFiles((prev) =>
+                prev.map((file) =>
+                    file.id === fileId
+                        ? { ...file, previewOpen: true, status: "parsing" }
+                        : file
+                )
+            );
+
+            readFileContentWithSanitization(target.file)
+                .then(({ sanitized, preview, isBinary }) => {
+                    setUploadedFiles((current) =>
+                        current.map((file) => {
+                            if (file.id !== fileId) return file;
+
+                            if (isBinary) {
+                                return {
+                                    ...file,
+                                    previewOpen: true,
+                                    preview,
+                                    status: "error",
+                                    content: "",
+                                };
+                            }
+
+                            return {
+                                ...file,
+                                previewOpen: true,
+                                preview,
+                                status: "parsed",
+                                content: file.content ?? sanitized,
+                            };
+                        })
+                    );
+                })
+                .catch(() => {
+                    toast.warning(`Unable to preview ${target.name}.`);
+                    setUploadedFiles((current) =>
+                        current.map((file) =>
+                            file.id === fileId
+                                ? {
+                                      ...file,
+                                      previewOpen: true,
+                                      preview: "Preview unavailable.",
+                                      status: "error",
+                                  }
+                                : file
+                        )
+                    );
+                });
+        },
+        [uploadedFiles]
+    );
+
+    const parseFilesForContext = useCallback(async () => {
+        const filesToParse = uploadedFiles.filter((file) => file.content === undefined && file.status !== "parsing");
+
+        if (filesToParse.length === 0) {
+            const { nextFiles, removedFiles } = enforceContextLimit(uploadedFiles);
+            if (removedFiles.length) {
+                setUploadedFiles(nextFiles);
+                toast.warning(
+                    `Removed ${removedFiles.length} file${removedFiles.length === 1 ? "" : "s"} to keep context under 100KB.`,
+                    {
+                        description: removedFiles.map((file) => file.name).join(", "),
+                    }
+                );
+            }
+            return nextFiles;
+        }
+
+        const idsBeingParsed = new Set(filesToParse.map((file) => file.id));
+
+        setUploadedFiles((prev) =>
+            prev.map((file) => (idsBeingParsed.has(file.id) ? { ...file, status: "parsing" } : file))
+        );
+
+        const results = await Promise.all(
+            filesToParse.map(async (file) => {
+                try {
+                    const parsed = await readFileContentWithSanitization(file.file);
+                    return { id: file.id, file, ...parsed };
+                } catch (error) {
+                    console.error("Failed to parse file content", error);
+                    toast.warning(`Unable to parse ${file.name}. Skipping from prompt context.`);
+                    return { id: file.id, file, error: true as const };
+                }
+            })
+        );
+
+        let removed: UploadedFileState[] = [];
+
+
+        const updatedFiles = await new Promise<UploadedFileState[]>((resolve) => {
+            setUploadedFiles((prev) => {
+                const resultMap = new Map(results.map((item) => [item.id, item]));
+
+                const next = prev.map((file) => {
+                    const result = resultMap.get(file.id);
+                    if (!result) {
+                        return file;
+                    }
+
+                    if ("error" in result) {
+                        return {
+                            ...file,
+                            status: "error" as const,
+                            content: "",
+                            preview: file.preview ?? "Preview unavailable.",
+                        };
+                    }
+
+                    if (result.isBinary) {
+                        return {
+                            ...file,
+                            status: "error" as const,
+                            content: "",
+                            preview: file.preview ?? result.preview,
+                        };
+                    }
+
+                    return {
+                        ...file,
+                        status: "parsed" as const,
+                        content: result.sanitized,
+                        preview: file.preview ?? result.preview,
+                    };
+                });
+
+                const { nextFiles, removedFiles } = enforceContextLimit(next);
+                removed = removedFiles;
+                resolve(nextFiles);
+                return nextFiles;
+            });
+        });
+
+        if (removed.length) {
+            toast.warning(
+                `Removed ${removed.length} file${removed.length === 1 ? "" : "s"} to keep context under 100KB.`,
+                {
+                    description: removed.map((file) => file.name).join(", "),
+                }
+            );
+        }
+
+        return updatedFiles;
+    }, [uploadedFiles]);
+
+    const buildAugmentedPrompt = useCallback(async () => {
+        const parsed = await parseFilesForContext();
+        const filesWithContent = parsed.filter((file) => (file.content?.length ?? 0) > 0);
+
+        if (!filesWithContent.length) {
+            return { augmentedInput: inputText, files: filesWithContent };
+        }
+
+        const contextAppendix = filesWithContent
+            .map((file) => `[Context: ${file.name} (${formatFileSize(file.size)})]\n${file.content}`)
+            .join("\n\n");
+
+        const needsSpacer = inputText.trim().length > 0 && !inputText.trimEnd().endsWith("\n\n");
+        const spacer = needsSpacer ? (inputText.endsWith("\n") ? "\n" : "\n\n") : "";
+        return {
+            augmentedInput: `${inputText}${spacer}${contextAppendix}`,
+            files: filesWithContent,
+        };
+    }, [inputText, parseFilesForContext]);
 
     const isChatGPT = targetProfile === "chatgpt";
     const showResult = Boolean(result);
@@ -313,6 +671,21 @@ const HANDOFF_TARGETS: Array<{
     useEffect(() => {
         persistAnalytics(modeAnalytics);
     }, [modeAnalytics]);
+
+    const markdownComponents: Components = {
+        code({ node: _node, inline, className, children, ...props }: MarkdownCodeProps) {
+            const match = /language-(\w+)/.exec(className || "");
+            return !inline && match ? (
+                <SyntaxHighlighter style={atomDark} language={match[1]} PreTag="div" {...props}>
+                    {String(children).replace(/\n$/, "")}
+                </SyntaxHighlighter>
+            ) : (
+                <code className={className} {...props}>
+                    {children}
+                </code>
+            );
+        },
+    };
 
     const handleProfileChange = (profile: PromptProfile) => {
         setTargetProfile(profile);
@@ -423,11 +796,12 @@ const HANDOFF_TARGETS: Array<{
         abortControllerRef.current = controller;
 
         try {
+            const { augmentedInput } = await buildAugmentedPrompt();
             const response = await fetch("/api/transform-prompt", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    inputText,
+                    inputText: augmentedInput,
                     systemPrompt: buildSystemPrompt(),
                     format,
                 }),
@@ -472,11 +846,12 @@ const HANDOFF_TARGETS: Array<{
         abortControllerRef.current = controller;
 
         try {
+            const { augmentedInput } = await buildAugmentedPrompt();
             const response = await fetch("/api/transform-prompt", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    inputText,
+                    inputText: augmentedInput,
                     systemPrompt: buildSystemPrompt(),
                     format,
                 }),
@@ -952,6 +1327,14 @@ const HANDOFF_TARGETS: Array<{
                                             <p className="text-xs text-muted-foreground">
                                                 Aim for high-signal context: audience, constraints, done definition, and any links you want the prompt to reference.
                                             </p>
+                                            <PromptTransformerFileAttachments
+                                                acceptedExtensions={ACCEPTED_EXTENSIONS}
+                                                files={uploadedFiles}
+                                                onFilesAdded={handleFilesAdded}
+                                                onRemoveFile={handleRemoveFile}
+                                                onRemoveAll={handleRemoveAll}
+                                                onTogglePreview={handleTogglePreview}
+                                            />
                                         </div>
 
                                         <Separator />
@@ -1125,23 +1508,8 @@ const HANDOFF_TARGETS: Array<{
                                                 <ScrollArea className="h-full w-full">
                                                     {result!.format === "markdown" ? (
                                                         <div className="prose dark:prose-invert max-w-none">
-                                                            <ReactMarkdown
-                                                                components={{
-                                                                    code({ inline, className, children, ...props }) {
-                                                                        const match = /language-(\w+)/.exec(className || "");
-                                                                        return !inline && match ? (
-                                                                            <SyntaxHighlighter style={atomDark} language={match[1]} PreTag="div" {...props}>
-                                                                                {String(children).replace(/\n$/, "")}
-                                                                            </SyntaxHighlighter>
-                                                                        ) : (
-                                                                            <code className={className} {...props}>
-                                                                                {children}
-                                                                            </code>
-                                                                        );
-                                                                    },
-                                                                }}
-                                                            >
-                                                                {getDisplayContent()}
+                                                            <ReactMarkdown components={markdownComponents}>
+                                                            {getDisplayContent()}
                                                             </ReactMarkdown>
                                                         </div>
                                                     ) : (
