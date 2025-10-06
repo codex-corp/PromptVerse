@@ -49,3 +49,11 @@ test
 prompt
 
 server.log
+
+# OpenNext
+.open-next/
+
+# Cloudflare
+.wrangler/
+.dev.vars
+worker-configuration.d.ts
