@@ -104,7 +104,7 @@ const formSchema = z.object({
     presencePenalty: z.number().min(0).max(2).optional(),
     notes: z.string().optional(),
     categoryId: z.string().optional(),
-    tags: z.array(z.string()).default([]),
+    tags: z.array(z.string()),
 });
 
 type FormData = z.infer<typeof formSchema>;

@@ -88,7 +88,7 @@ interface Version {
     frequencyPenalty?: number;
     presencePenalty?: number;
     notes?: string;
-    versionNote: string;
+    versionNote?: string;
     createdAt: string;
     author: string;
 }
@@ -154,7 +154,7 @@ export function VersionManager({
     };
 
     const getVersionChanges = (older: Version, newer: Version) => {
-        const changes = [];
+        const changes: Array<{ field: string; old: string; new: string }> = [];
 
         if (older.title !== newer.title) {
             changes.push({ field: "Title", old: older.title, new: newer.title });
