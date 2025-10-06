@@ -171,15 +171,28 @@ export function getLocalDatabase(): DatabaseClient {
   return sqliteClient;
 }
 
-export function getD1FromEnv(env: Record<string, any> | undefined | null): DatabaseClient {
+function resolveD1Binding(env: Record<string, any> | undefined | null) {
   if (!env) {
-    throw new Error("D1 environment bindings are not available");
+    return null;
   }
 
-  const binding = env.promptverse_db || env.PROMPTVERSE_DB || env.PromptverseDb;
+  return (
+    env.promptverse_db ||
+    env.PROMPTVERSE_DB ||
+    env.PromptverseDb ||
+    env.promptverse_d1_db ||
+    env.PROMPTVERSE_D1_DB ||
+    env.PromptverseD1Db
+  );
+}
+
+export function getD1FromEnv(env: Record<string, any> | undefined | null): DatabaseClient {
+  const binding = resolveD1Binding(env);
 
   if (!binding) {
-    throw new Error("D1 binding 'promptverse_db' is not configured");
+    throw new Error(
+      "D1 binding not found. Expected 'promptverse_db' or 'promptverse_d1_db' to be configured",
+    );
   }
 
   return createD1Client(binding as D1Binding);
@@ -189,7 +202,7 @@ export function getDatabaseClient(env?: Record<string, any> | null): DatabaseCli
   const isEdgeRuntime = typeof (globalThis as any).EdgeRuntime === "string";
 
   const bindingEnv = env ?? null;
-  const binding = bindingEnv?.promptverse_db || bindingEnv?.PROMPTVERSE_DB || bindingEnv?.PromptverseDb;
+  const binding = resolveD1Binding(bindingEnv);
 
   if (binding) {
     return getD1FromEnv(bindingEnv!);
@@ -198,8 +211,7 @@ export function getDatabaseClient(env?: Record<string, any> | null): DatabaseCli
   if (isEdgeRuntime) {
     const globalEnv =
       (globalThis as any).__ENV__ ?? (globalThis as any).env ?? null;
-    const globalBinding =
-      globalEnv?.promptverse_db || globalEnv?.PROMPTVERSE_DB || globalEnv?.PromptverseDb;
+    const globalBinding = resolveD1Binding(globalEnv);
 
     if (globalBinding) {
       return getD1FromEnv(globalEnv);
