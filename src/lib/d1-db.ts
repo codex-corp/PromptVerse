@@ -17,6 +17,8 @@ type SQLiteDatabase = {
 
 type NodeRequireFunction = (id: string) => any;
 
+declare const __non_webpack_require__: NodeRequireFunction | undefined;
+
 export interface DatabasePreparedStatement<T = unknown> {
   all(...params: any[]): Promise<T[]>;
   get(...params: any[]): Promise<T | null>;
@@ -138,13 +140,28 @@ function createLocalDatabase(): SQLiteDatabase {
     throw new Error("SQLite database is only available in a Node.js runtime");
   }
 
-  // Use Node's createRequire to avoid eval/new Function in Node runtime
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { createRequire } = require("node:module");
-  const nodeRequire: NodeRequireFunction = createRequire(process.cwd() + "/");
+  let nodeRequire: NodeRequireFunction | undefined;
+
+  try {
+    nodeRequire = new Function(
+      "return typeof require !== 'undefined' ? require : undefined;",
+    )();
+  } catch {
+    nodeRequire = undefined;
+  }
+
+  if (!nodeRequire && typeof __non_webpack_require__ === "function") {
+    nodeRequire = __non_webpack_require__;
+  }
+
+  if (!nodeRequire) {
+    throw new Error(
+      "Unable to load the SQLite driver. Ensure the API route runs with runtime \"nodejs\" or provide a D1 binding.",
+    );
+  }
   const Database = nodeRequire("better-sqlite3");
-  const path = nodeRequire("node:path") as typeof import("node:path");
-  const fs = nodeRequire("node:fs") as typeof import("node:fs");
+  const path = nodeRequire("path") as typeof import("node:path");
+  const fs = nodeRequire("fs") as typeof import("node:fs");
 
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {

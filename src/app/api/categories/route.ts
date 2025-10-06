@@ -3,7 +3,7 @@ import { getDatabaseClient } from "@/lib/db";
 import { getRequestContext } from "@cloudflare/next-on-pages";
 import { generateId } from "@/lib/id";
 
-export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
+export const runtime = "edge";
 
 export async function GET(request: NextRequest) {
   try {

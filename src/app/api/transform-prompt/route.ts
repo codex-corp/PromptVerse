@@ -68,7 +68,7 @@ async function callChatCompletion({
   }
 }
 
-export const runtime = process.env.NEXT_RUNTIME === "edge" ? "edge" : "nodejs";
+export const runtime = "edge";
 
 export async function POST(request: NextRequest) {
   let inputText = "";
