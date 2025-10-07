@@ -17,6 +17,7 @@ jobs:
       LONGCAT_KEY: ${{ secrets.LONGCAT_KEY }}
       PROXY_TOKEN: ${{ secrets.PROXY_TOKEN }}
       AI_MODEL: ${{ secrets.AI_MODEL }}
+      ADMIN_SEED_TOKEN: ${{ secrets.ADMIN_SEED_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
