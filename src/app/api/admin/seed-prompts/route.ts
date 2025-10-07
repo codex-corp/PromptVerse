@@ -42,7 +42,26 @@ export async function POST(request: NextRequest) {
 
   try {
     const db = getDatabaseFromRequest(request);
-    const result = await seedPrompts(db);
+    let env: Record<string, string> = {};
+
+    try {
+      env = (getRequestContext().env as Record<string, string>) ?? {};
+    } catch {
+      env = {};
+    }
+
+    const result = await seedPrompts(db, {
+      csvUrl: env.SEED_PROMPTS_URL,
+      authorEmail: env.SEED_USER_EMAIL,
+      authorName: env.SEED_USER_NAME,
+      defaultModel: env.SEED_DEFAULT_MODEL,
+      engineeringCategoryName: env.SEED_PROMPTS_ENGINEERING_CATEGORY,
+      engineeringCategoryDescription: env.SEED_PROMPTS_ENGINEERING_DESCRIPTION,
+      engineeringCategoryColor: env.SEED_PROMPTS_ENGINEERING_COLOR,
+      generalCategoryName: env.SEED_PROMPTS_GENERAL_CATEGORY,
+      generalCategoryDescription: env.SEED_PROMPTS_GENERAL_DESCRIPTION,
+      generalCategoryColor: env.SEED_PROMPTS_GENERAL_COLOR,
+    });
     return NextResponse.json({
       success: true,
       ...result,

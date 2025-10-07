@@ -1,4 +1,3 @@
-import { getRequestContext } from "@cloudflare/next-on-pages";
 import type { DatabaseClient } from "@/lib/db";
 import { generateId } from "@/lib/id";
 
@@ -24,16 +23,25 @@ type SeedResult = {
 
 const SOURCE_TAG = "prompts.chat";
 
-function getDefaultEnv(key: string): string | undefined {
+function envValue(key: string, override?: string): string | undefined {
+  if (override && override.length > 0) {
+    return override;
+  }
+
   if (typeof process !== "undefined" && process.env?.[key]) {
     return process.env[key];
   }
 
-  try {
-    return getRequestContext().env?.[key];
-  } catch {
-    return undefined;
+  const globalEnv =
+    ((globalThis as any)?.__ENV__ as Record<string, any> | undefined) ??
+    ((globalThis as any)?.env as Record<string, any> | undefined);
+
+  const fromGlobal = globalEnv?.[key];
+  if (typeof fromGlobal === "string" && fromGlobal.length > 0) {
+    return fromGlobal;
   }
+
+  return undefined;
 }
 
 function parseCsvLine(line: string): string[] {
@@ -140,20 +148,34 @@ async function ensureTag(db: DatabaseClient, name: string, color = "#6366F1"): P
 }
 
 export async function seedPrompts(db: DatabaseClient, options: SeedOptions = {}): Promise<SeedResult> {
-  const csvUrl = options.csvUrl ?? getDefaultEnv("SEED_PROMPTS_URL") ??
+  const csvUrl = envValue("SEED_PROMPTS_URL", options.csvUrl) ??
     "https://raw.githubusercontent.com/f/awesome-chatgpt-prompts/refs/heads/main/prompts.csv";
 
-  const authorEmail = (options.authorEmail ?? getDefaultEnv("SEED_USER_EMAIL") ?? "hany@codexc.com").trim();
-  const authorName = (options.authorName ?? getDefaultEnv("SEED_USER_NAME") ?? "Hany alsamman").trim();
-  const defaultModel = options.defaultModel ?? getDefaultEnv("SEED_DEFAULT_MODEL") ?? "gpt-4o";
+  const authorEmail = (envValue("SEED_USER_EMAIL", options.authorEmail) ?? "hany@codexc.com").trim();
+  const authorName = (envValue("SEED_USER_NAME", options.authorName) ?? "Hany alsamman").trim();
+  const defaultModel = envValue("SEED_DEFAULT_MODEL", options.defaultModel) ?? "gpt-4o";
 
-  const engineeringCategoryName = options.engineeringCategoryName ?? getDefaultEnv("SEED_PROMPTS_ENGINEERING_CATEGORY") ?? "Engineering Prompts";
-  const engineeringCategoryDescription = options.engineeringCategoryDescription ?? "Imported engineering prompts from prompts.chat";
-  const engineeringCategoryColor = options.engineeringCategoryColor ?? getDefaultEnv("SEED_PROMPTS_ENGINEERING_COLOR") ?? "#2563EB";
+  const engineeringCategoryName = envValue(
+    "SEED_PROMPTS_ENGINEERING_CATEGORY",
+    options.engineeringCategoryName,
+  ) ?? "Engineering Prompts";
+  const engineeringCategoryDescription =
+    options.engineeringCategoryDescription ?? "Imported engineering prompts from prompts.chat";
+  const engineeringCategoryColor = envValue(
+    "SEED_PROMPTS_ENGINEERING_COLOR",
+    options.engineeringCategoryColor,
+  ) ?? "#2563EB";
 
-  const generalCategoryName = options.generalCategoryName ?? getDefaultEnv("SEED_PROMPTS_GENERAL_CATEGORY") ?? "General Prompts";
-  const generalCategoryDescription = options.generalCategoryDescription ?? "General-purpose prompts from prompts.chat";
-  const generalCategoryColor = options.generalCategoryColor ?? getDefaultEnv("SEED_PROMPTS_GENERAL_COLOR") ?? "#9333EA";
+  const generalCategoryName = envValue(
+    "SEED_PROMPTS_GENERAL_CATEGORY",
+    options.generalCategoryName,
+  ) ?? "General Prompts";
+  const generalCategoryDescription =
+    options.generalCategoryDescription ?? "General-purpose prompts from prompts.chat";
+  const generalCategoryColor = envValue(
+    "SEED_PROMPTS_GENERAL_COLOR",
+    options.generalCategoryColor,
+  ) ?? "#9333EA";
 
   const csv = await fetchCsv(csvUrl);
   const lines = csv.split(/\r?\n/).filter(Boolean);
