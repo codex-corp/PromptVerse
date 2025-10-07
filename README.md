@@ -97,6 +97,17 @@ npm run deploy
 - API routes run on the edge in production (literal `runtime = "edge"`) and the dev wrapper temporarily switches them to Node/SQLite when you run `npm run dev:local`.
 - KV binding name is `promptverse_kv`; D1 binding name is `promptverse_d1_db`.
 
+### 🔁 Seeding Prompts on Cloudflare
+
+Set an `ADMIN_SEED_TOKEN` secret in Cloudflare Pages (and optionally your GitHub environment). Then deploy and run:
+
+```bash
+curl -X POST https://your-domain/api/admin/seed-prompts \
+  -H 'x-seed-token: your-secret'
+```
+
+The endpoint reuses the same logic as the local seed script but talks to D1.
+
 #### GitHub Actions / CI secrets
 
 Wrangler needs credentials in CI—local `wrangler login` state isn’t available in GitHub runners. Store these as repository secrets and expose them before running `npm run preview` or `npm run deploy`:
@@ -105,6 +116,7 @@ Wrangler needs credentials in CI—local `wrangler login` state isn’t availabl
 | --- |-----------------------------------------------------------------------------|
 | `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account id (`15576ba2b25a9f04dcc0b8dcd5c0886a`).            |
 | `CLOUDFLARE_API_TOKEN` | API token with **Pages:Edit**, **D1:Edit**, and **Workers KV:Edit** scopes. |
+| `ADMIN_SEED_TOKEN` | Shared secret required by `/api/admin/seed-prompts` (optional). |
 
 Example workflow snippet:
 
