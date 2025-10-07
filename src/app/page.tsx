@@ -15,6 +15,7 @@ import { AdvancedSearch } from "@/components/advanced-search";
 import { VersionManager } from "@/components/version-manager";
 import { PromptTransformer } from "@/components/prompt-transformer";
 import { PWAInstallButton } from "@/components/pwa-install-button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
     Filter,
     Folder,
@@ -35,7 +36,10 @@ import {
     Code as CodeIcon,
     FileText as FileTextIcon,
     GitBranch as GitBranchIcon,
-    RotateCcw as RotateCcwIcon, PlusIcon, Wand2, UploadIcon, SettingsIcon, DownloadIcon
+    RotateCcw as RotateCcwIcon,
+    PlusIcon,
+    Wand2,
+    SettingsIcon
 
 } from "lucide-react";
 import {
@@ -632,9 +636,7 @@ export default function PromptVerse() {
                             availableModels={allModels}
                         />
                         <PWAInstallButton className="items-start" />
-                        <Button variant="outline" size="sm">
-                            <SettingsIcon className="h-4 w-4" />
-                        </Button>
+                        <ThemeToggle />
                     </div>
                 </div>
             </div>
@@ -713,16 +715,6 @@ export default function PromptVerse() {
                                     <CardTitle className="text-sm font-medium">
                                         Prompts ({filteredPrompts.length})
                                     </CardTitle>
-                                    <div className="flex items-center space-x-2">
-                                        <Button variant="outline" size="sm">
-                                            <DownloadIcon className="h-4 w-4 mr-2" />
-                                            Export
-                                        </Button>
-                                        <Button variant="outline" size="sm">
-                                            <UploadIcon className="h-4 w-4 mr-2" />
-                                            Import
-                                        </Button>
-                                    </div>
                                 </div>
                             </CardHeader>
                             <CardContent className="p-0">

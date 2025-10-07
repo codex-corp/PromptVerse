@@ -65,11 +65,41 @@ import TemplatesPanel from "./templates-panel";
 import { ENGINEERING_TEMPLATE_CATEGORIES, ENGINEERING_TEMPLATES_FLAT, type EngineeringTemplate } from "./templates-data";
 import { cn } from "@/lib/utils";
 import { PromptTransformerFileAttachments, type UploadedFileState } from "./file-attachments";
+import ActivityLogPanel, { type TransformationStepState } from "./activity-log-panel";
 
 const ACCEPTED_EXTENSIONS = [".py", ".php", ".js", ".ts", ".html", ".css", ".md", ".txt", ".json", ".csv"];
 const MAX_FILES = 10;
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const MAX_CONTEXT_SIZE = 100 * 1024;
+const MAX_INPUT_LENGTH = 8000;
+
+const TRANSFORMATION_STEPS_BASE = [
+    {
+        title: "Analyzing Raw Prompt",
+        description: "Identifying key entities and user intent.",
+        details: undefined,
+    },
+    {
+        title: "Defining Core Objectives",
+        description: "Structuring the primary goals for the AI.",
+        details: undefined,
+    },
+    {
+        title: "Applying Engineering Principles",
+        description: "Injecting constraints, context, and formatting rules.",
+        details: undefined,
+    },
+    {
+        title: "Refining Final Output",
+        description: "Performing final checks for clarity and effectiveness.",
+        details: undefined,
+    },
+    {
+        title: "Thinking…",
+        description: "Compiling the final prompt text.",
+        details: undefined,
+    },
+] satisfies Array<Omit<TransformationStepState, "status">>;
 
 const enforceContextLimit = (files: UploadedFileState[]) => {
     const sortedByAdded = [...files].sort((a, b) => a.addedAt - b.addedAt);
@@ -107,6 +137,11 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
     const [modeAnalytics, setModeAnalytics] = useState<ModeAnalyticsState>(() => loadAnalyticsFromStorage());
     const abortControllerRef = useRef<AbortController | null>(null);
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFileState[]>([]);
+    const [activitySteps, setActivitySteps] = useState<TransformationStepState[]>(() =>
+        TRANSFORMATION_STEPS_BASE.map((step) => ({ ...step, status: "pending" as const }))
+    );
+    const [isActivityVisible, setIsActivityVisible] = useState(false);
+    const activityTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
 
     const topModes = useMemo(() => {
         const entries = Object.entries(modeAnalytics.modeCounts);
@@ -117,7 +152,79 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
         () => MODE_DEFINITIONS.filter((mode) => !forcedModes.includes(mode.id)),
         [forcedModes]
     );
-const quickTemplates = useMemo(() => ENGINEERING_TEMPLATES_FLAT.slice(0, 4), []);
+    const quickTemplates = useMemo(() => ENGINEERING_TEMPLATES_FLAT.slice(0, 4), []);
+
+    const clearActivityTimers = useCallback(() => {
+        for (const timeout of activityTimeoutsRef.current) {
+            clearTimeout(timeout);
+        }
+        activityTimeoutsRef.current = [];
+    }, []);
+
+    const startActivityLog = useCallback(() => {
+        clearActivityTimers();
+        setIsActivityVisible(true);
+        setActivitySteps(
+            TRANSFORMATION_STEPS_BASE.map((step, idx) => ({
+                ...step,
+                status: idx === 0 ? "in-progress" : "pending",
+            }))
+        );
+
+        activityTimeoutsRef.current = TRANSFORMATION_STEPS_BASE.map((_, idx) => {
+            if (idx === 0) return null;
+            return setTimeout(() => {
+                setActivitySteps(
+                    TRANSFORMATION_STEPS_BASE.map((step, stepIdx) => {
+                        if (stepIdx < idx) {
+                            return { ...step, status: "completed" as const };
+                        }
+                        if (stepIdx === idx) {
+                            return { ...step, status: "in-progress" as const };
+                        }
+                        return { ...step, status: "pending" as const };
+                    })
+                );
+            }, idx * 700);
+        }).filter(Boolean) as Array<ReturnType<typeof setTimeout>>;
+    }, [clearActivityTimers]);
+
+    const completeActivityLog = useCallback(() => {
+        clearActivityTimers();
+        setActivitySteps(
+            TRANSFORMATION_STEPS_BASE.map((step) => ({
+                ...step,
+                status: "completed" as const,
+            }))
+        );
+    }, [clearActivityTimers]);
+
+    const resetActivityLog = useCallback(
+        (hidePanel = true) => {
+            clearActivityTimers();
+            setActivitySteps(
+                TRANSFORMATION_STEPS_BASE.map((step) => ({
+                    ...step,
+                    status: "pending" as const,
+                }))
+            );
+            if (hidePanel) {
+                setIsActivityVisible(false);
+            }
+        },
+        [clearActivityTimers],
+    );
+
+    const hideActivityLog = useCallback(() => {
+        setIsActivityVisible(false);
+        clearActivityTimers();
+        setActivitySteps(
+            TRANSFORMATION_STEPS_BASE.map((step) => ({
+                ...step,
+                status: "pending" as const,
+            }))
+        );
+    }, [clearActivityTimers]);
 
 const HANDOFF_TARGETS: Array<{
     id: string;
@@ -779,6 +886,18 @@ const HANDOFF_TARGETS: Array<{
         return () => document.removeEventListener("keydown", handleKeyDown);
     }, [open, onOpenChange, runTour]);
 
+    useEffect(() => {
+        if (!open) {
+            resetActivityLog();
+        }
+    }, [open, resetActivityLog]);
+
+    useEffect(() => {
+        return () => {
+            clearActivityTimers();
+        };
+    }, [clearActivityTimers]);
+
     const handleTransform = async () => {
         if (!inputText.trim()) {
             setError("Input text cannot be empty");
@@ -787,6 +906,7 @@ const HANDOFF_TARGETS: Array<{
 
         setError(null);
         setIsTransforming(true);
+        startActivityLog();
 
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
@@ -815,6 +935,7 @@ const HANDOFF_TARGETS: Array<{
 
             const data = await response.json();
             setResult({ refinedPrompt: data.refinedPrompt, format });
+            completeActivityLog();
         } catch (error: any) {
             if (error.name === "AbortError") {
                 return;
@@ -823,6 +944,7 @@ const HANDOFF_TARGETS: Array<{
             console.error("Error transforming prompt:", error);
             setError(error.message || "An error occurred while transforming the prompt");
             toast.error(error.message || "Failed to transform prompt");
+            resetActivityLog();
         } finally {
             setIsTransforming(false);
             abortControllerRef.current = null;
@@ -837,6 +959,7 @@ const HANDOFF_TARGETS: Array<{
 
         setError(null);
         setIsRegenerating(true);
+        startActivityLog();
 
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
@@ -865,6 +988,7 @@ const HANDOFF_TARGETS: Array<{
 
             const data = await response.json();
             setResult({ refinedPrompt: data.refinedPrompt, format });
+            completeActivityLog();
         } catch (error: any) {
             if (error.name === "AbortError") {
                 return;
@@ -873,6 +997,7 @@ const HANDOFF_TARGETS: Array<{
             console.error("Error regenerating prompt:", error);
             setError(error.message || "An error occurred while transforming the prompt");
             toast.error(error.message || "Failed to transform prompt");
+            resetActivityLog();
         } finally {
             setIsRegenerating(false);
             abortControllerRef.current = null;
@@ -1075,6 +1200,8 @@ const HANDOFF_TARGETS: Array<{
         setSelectedPrompt(MARKDOWN_PROMPT);
         setForcedModes([]);
         setSuggestedModes([]);
+        setCharCount(0);
+        resetActivityLog();
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
@@ -1255,13 +1382,23 @@ const HANDOFF_TARGETS: Array<{
                                         <div className="space-y-3" data-tour-id="tour-raw-prompt">
                                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                                                 <h4 className="text-sm font-medium">Raw prompt</h4>
-                                                <div className="flex flex-wrap gap-2">
-                                                    <Button variant="outline" size="sm" onClick={handleInspiration}>
-                                                        Inspiration
+                                            <div className="flex flex-wrap gap-2">
+                                                {showResult && (
+                                                    <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        onClick={() => resetForm()}
+                                                        disabled={isProcessing}
+                                                    >
+                                                        Reset
                                                     </Button>
-                                                    <DropdownMenu>
-                                                        <DropdownMenuTrigger asChild>
-                                                            <Button variant="outline" size="sm" className="flex items-center gap-1">
+                                                )}
+                                                <Button variant="outline" size="sm" onClick={handleInspiration}>
+                                                    Inspiration
+                                                </Button>
+                                                <DropdownMenu>
+                                                    <DropdownMenuTrigger asChild>
+                                                        <Button variant="outline" size="sm" className="flex items-center gap-1">
                                                                 Templates
                                                                 <ChevronDown className="h-3 w-3" />
                                                             </Button>
@@ -1296,19 +1433,22 @@ const HANDOFF_TARGETS: Array<{
                                                     placeholder="Describe your idea concisely... (e.g., 'Ship a migration plan for multi-tenant billing')."
                                                     value={inputText}
                                                     onChange={(event) => {
-                                                        const text = event.target.value;
-                                                        if (text.length <= 1000) {
-                                                            setInputText(text);
-                                                            setCharCount(text.length);
-                                                        }
+                                                        const text = event.target.value.slice(0, MAX_INPUT_LENGTH);
+                                                        setInputText(text);
+                                                        setCharCount(text.length);
                                                     }}
                                                     className={`min-h-[140px] resize-none font-mono text-sm pr-16 ${
-                                                        charCount > 900 ? "text-red-500" : charCount > 700 ? "text-yellow-500" : "text-gray-500"
+                                                        charCount > MAX_INPUT_LENGTH * 0.95
+                                                            ? "text-red-500"
+                                                            : charCount > MAX_INPUT_LENGTH * 0.8
+                                                                ? "text-yellow-500"
+                                                                : "text-gray-500"
                                                     }`}
                                                     disabled={isTransforming}
+                                                    maxLength={MAX_INPUT_LENGTH}
                                                 />
                                                 <div className="pointer-events-none absolute bottom-2 right-3 rounded-full bg-background/90 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
-                                                    {charCount}/1000
+                                                    {charCount}/{MAX_INPUT_LENGTH}
                                                 </div>
                                                 {inputText && (
                                                     <Button
@@ -1562,11 +1702,36 @@ const HANDOFF_TARGETS: Array<{
                             </div>
 
                             <aside className="flex h-full flex-col gap-5">
-                                <TemplatesPanel
-                                    categories={ENGINEERING_TEMPLATE_CATEGORIES}
-                                    mode={targetProfile}
-                                    onApply={applyEngineeringTemplate}
-                                />
+                                <div className="relative min-h-[520px] overflow-hidden">
+                                    <div
+                                        className={cn(
+                                            "absolute inset-0 z-0 transition-all duration-500 ease-in-out",
+                                            isActivityVisible
+                                                ? "translate-x-full opacity-0 pointer-events-none"
+                                                : "translate-x-0 opacity-100"
+                                        )}
+                                    >
+                                        <TemplatesPanel
+                                            categories={ENGINEERING_TEMPLATE_CATEGORIES}
+                                            mode={targetProfile}
+                                            onApply={applyEngineeringTemplate}
+                                        />
+                                    </div>
+                                    <div
+                                        className={cn(
+                                            "absolute inset-0 z-10 transition-all duration-500 ease-in-out",
+                                            isActivityVisible
+                                                ? "translate-x-0 opacity-100"
+                                                : "translate-x-full opacity-0 pointer-events-none"
+                                        )}
+                                    >
+                                        <ActivityLogPanel
+                                            steps={activitySteps}
+                                            onBackToTemplates={hideActivityLog}
+                                            canDismiss={!isTransforming && !isRegenerating}
+                                        />
+                                    </div>
+                                </div>
 
                                 {isChatGPT && (
                                     <div className="rounded-2xl border bg-card p-5 shadow-sm space-y-4" data-tour-id="tour-mode-guidance">

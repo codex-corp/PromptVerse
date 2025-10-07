@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { ServiceWorkerRegister } from "@/components/service-worker-register";
+import { ThemeProvider } from "@/components/theme-provider";
 import { getRepoMetadata } from "@/lib/repo-metadata";
 import { Github } from "lucide-react";
 import Link from "next/link";
@@ -40,7 +41,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0f172a",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+  ],
 };
 
 export default async function RootLayout({
@@ -52,9 +56,10 @@ export default async function RootLayout({
 
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="font-sans antialiased bg-background text-foreground dark">
-        <div className="min-h-screen pb-20">{children}</div>
-        <footer
+      <body className="font-sans antialiased bg-background text-foreground">
+        <ThemeProvider>
+          <div className="min-h-screen pb-20">{children}</div>
+          <footer
           role="contentinfo"
           aria-label="PromptVerse site footer"
           className="fixed inset-x-0 bottom-0 z-50 bg-transparent border-t px-6 text-xs font-sans text-white"
@@ -96,8 +101,9 @@ export default async function RootLayout({
             </div>
           </div>
         </footer>
-        <Toaster />
-        <ServiceWorkerRegister />
+          <Toaster />
+          <ServiceWorkerRegister />
+        </ThemeProvider>
       </body>
     </html>
   );
