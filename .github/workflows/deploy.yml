@@ -8,9 +8,15 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    environment: prod
     env:
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      LONGCAT_KEY: ${{ secrets.LONGCAT_KEY }}
+      PROXY_TOKEN: ${{ secrets.PROXY_TOKEN }}
+      AI_MODEL: ${{ secrets.AI_MODEL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
