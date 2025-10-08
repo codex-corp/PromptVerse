@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
+import { buildFallbackPromptPreview, buildTransformMetadata } from "@/components/prompt-transformer/core";
 
 type SupportedFormat = "markdown" | "json";
 
@@ -105,29 +105,16 @@ export async function POST(request: NextRequest) {
 
     let refinedPrompt = completion.choices?.[0]?.message?.content?.trim() ?? "";
 
-    const estimatedTokens = refinedPrompt ? Math.ceil(refinedPrompt.length / 4) : 0;
-    let complexity: "Low" | "Medium" | "High" = "Low";
-
-    if (estimatedTokens > 1200) {
-      complexity = "High";
-    } else if (estimatedTokens > 400) {
-      complexity = "Medium";
-    }
-
     return NextResponse.json({
       refinedPrompt,
       format,
       success: true,
-      metadata: {
-        estimatedTokens,
-        complexity,
-        chainOfThought: null,
-      },
+      metadata: buildTransformMetadata(refinedPrompt),
     });
   } catch (error) {
     console.error("Error in prompt transformation:", error);
 
-    const previewText = inputText ? `${inputText.substring(0, 100)}...` : "No input provided.";
+    const previewText = buildFallbackPromptPreview(inputText);
     const fallbackPrompt = `Transformed prompt based on: "${previewText}"
 
 This refined prompt has been optimized for clarity, specificity, and effectiveness with AI models. The transformation focuses on:
@@ -136,25 +123,12 @@ This refined prompt has been optimized for clarity, specificity, and effectivene
 - Appropriate tone and structure
 - Removal of ambiguity and unnecessary elements`;
 
-    const estimatedTokens = fallbackPrompt ? Math.ceil(fallbackPrompt.length / 4) : 0;
-    let complexity: "Low" | "Medium" | "High" = "Low";
-
-    if (estimatedTokens > 1200) {
-      complexity = "High";
-    } else if (estimatedTokens > 400) {
-      complexity = "Medium";
-    }
-
     return NextResponse.json({
       refinedPrompt: fallbackPrompt,
       format,
       success: true,
       note: "Fallback response due to API error",
-      metadata: {
-        estimatedTokens,
-        complexity,
-        chainOfThought: null,
-      },
+      metadata: buildTransformMetadata(fallbackPrompt),
     });
   }
 }

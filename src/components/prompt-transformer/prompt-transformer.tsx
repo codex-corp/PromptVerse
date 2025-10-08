@@ -19,18 +19,6 @@ import {
     HelpCircle,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import type { Components } from "react-markdown";
-import type { HTMLAttributes, ReactNode } from "react";
-
-type MarkdownCodeProps = HTMLAttributes<HTMLElement> & {
-    inline?: boolean;
-    className?: string;
-    children?: ReactNode;
-    node?: unknown;
-};
-
-import { atomDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { toast } from "sonner";
 import { driver } from "driver.js";
 import "driver.js/dist/driver.css";
@@ -49,7 +37,6 @@ import type {
     ModeSuggestion,
     PromptProfile,
     PromptTransformerProps,
-    TransformMetadata,
     TransformResult,
     TransformedPrompt
 } from "./types";
@@ -69,115 +56,22 @@ import { PromptTransformerFileAttachments, type UploadedFileState } from "./file
 import ActivityLogPanel, { type TransformationStepState } from "./activity-log-panel";
 import TransformationAnalysis from "./transformation-analysis";
 import ContextualOptimizer, { type OptimizerSnippetPayload } from "./contextual-optimizer";
+import { ACCEPTED_EXTENSIONS, MAX_FILES, MAX_FILE_SIZE, MAX_INPUT_LENGTH, enforceContextLimit } from "./validators";
+import { createMarkdownComponents } from "./transformers/markdown-transformer";
+import { deriveClipboardContent, writePlainClipboard, writeRichClipboard } from "./transformers/text-transformer";
+import { downloadContent } from "./transformers/html-transformer";
+import { executeTransformRequest } from "./core";
+import {
+    TRANSFORMATION_STEPS_BASE,
+    createCompletedSteps,
+    createInitialSteps,
+    createPendingSteps,
+    createProgressiveSteps,
+} from "./strategies";
 
-const ACCEPTED_EXTENSIONS = [
-    ".py",
-    ".php",
-    ".js",
-    ".ts",
-    ".html",
-    ".css",
-    ".md",
-    ".txt",
-    ".json",
-    ".csv",
-    ".xml",
-    ".yml",
-    ".yaml",
-    ".ini",
-    ".conf",
-    ".sql",
-    ".bash",
-    ".sh",
-    ".bat",
-    ".ps1",
-    ".env",
-    ".log",
-    ".pdf",
-    ".docx",
-    ".xlsx",
-    ".jpg",
-    ".jpeg"
-];
-const MAX_FILES = 10;
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
-const MAX_TOTAL_IMAGE_BYTES = 1024 * 1024;
-const MAX_CONTEXT_SIZE = 100 * 1024;
-const MAX_INPUT_LENGTH = 8000;
 const INPUT_COST_PER_1K = 0.005; // Approximate GPT‑4o input cost
 const OUTPUT_COST_PER_1K = 0.015; // Approximate GPT‑4o output cost
 const OUTPUT_TOKEN_MULTIPLIER = 1.5;
-const TRANSFORMATION_STEPS_BASE = [
-    {
-        title: "Analyzing Raw Prompt",
-        description: "Identifying key entities and user intent.",
-        details: undefined,
-    },
-    {
-        title: "Defining Core Objectives",
-        description: "Structuring the primary goals for the AI.",
-        details: undefined,
-    },
-    {
-        title: "Applying Engineering Principles",
-        description: "Injecting constraints, context, and formatting rules.",
-        details: undefined,
-    },
-    {
-        title: "Refining Final Output",
-        description: "Performing final checks for clarity and effectiveness.",
-        details: undefined,
-    },
-    {
-        title: "Thinking…",
-        description: "Compiling the final prompt text.",
-        details: undefined,
-    },
-] satisfies Array<Omit<TransformationStepState, "status">>;
-
-const enforceContextLimit = (files: UploadedFileState[]) => {
-    const sortedByAdded = [...files].sort((a, b) => a.addedAt - b.addedAt);
-    let total = sortedByAdded.reduce((sum, file) => sum + (file.content?.length ?? 0), 0);
-    const removalSet = new Set<string>();
-
-    let imageBytes = sortedByAdded.reduce((sum, file) => {
-        const extension = file.name.split('.').pop()?.toLowerCase();
-        if (extension && ["jpg", "jpeg", "png", "gif", "webp"].includes(extension)) {
-            return sum + (file.size ?? 0);
-        }
-        return sum;
-    }, 0);
-
-    while (total > MAX_CONTEXT_SIZE && sortedByAdded.length) {
-        const oldest = sortedByAdded.shift();
-        if (!oldest) {
-            break;
-        }
-        removalSet.add(oldest.id);
-        total -= oldest.content?.length ?? 0;
-        const extension = oldest.name.split('.').pop()?.toLowerCase();
-        if (extension && ["jpg", "jpeg"].includes(extension)) {
-            imageBytes -= oldest.size ?? 0;
-        }
-    }
-
-    while (imageBytes > MAX_TOTAL_IMAGE_BYTES && sortedByAdded.length) {
-        const oldest = sortedByAdded.shift();
-        if (!oldest) {
-            break;
-        }
-        removalSet.add(oldest.id);
-        const extension = oldest.name.split('.').pop()?.toLowerCase();
-        if (extension && ["jpg", "jpeg"].includes(extension)) {
-            imageBytes -= oldest.size ?? 0;
-        }
-    }
-
-    const nextFiles = files.filter((file) => !removalSet.has(file.id));
-    const removedFiles = files.filter((file) => removalSet.has(file.id));
-
-    return { nextFiles, removedFiles };
-};
 
 export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded }: PromptTransformerProps) {
     const [inputText, setInputText] = useState("");
@@ -196,9 +90,7 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
     const abortControllerRef = useRef<AbortController | null>(null);
     const inputTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFileState[]>([]);
-    const [activitySteps, setActivitySteps] = useState<TransformationStepState[]>(() =>
-        TRANSFORMATION_STEPS_BASE.map((step) => ({ ...step, status: "pending" as const }))
-    );
+    const [activitySteps, setActivitySteps] = useState<TransformationStepState[]>(() => createPendingSteps());
     const [panelMode, setPanelMode] = useState<"templates" | "activity" | "analysis">("templates");
     const activityTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
     const [optimizerDialogOpen, setOptimizerDialogOpen] = useState(false);
@@ -264,20 +156,6 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
     );
     const quickTemplates = useMemo(() => ENGINEERING_TEMPLATES_FLAT.slice(0, 4), []);
 
-    const parseTransformMetadata = useCallback((metadata: unknown): TransformMetadata | null => {
-        if (!metadata || typeof metadata !== "object") {
-            return null;
-        }
-
-        const value = metadata as Record<string, unknown>;
-
-        return {
-            estimatedTokens: typeof value.estimatedTokens === "number" ? value.estimatedTokens : null,
-            complexity: typeof value.complexity === "string" ? value.complexity : null,
-            chainOfThought: typeof value.chainOfThought === "string" ? value.chainOfThought : null,
-        };
-    }, []);
-
     const clearActivityTimers = useCallback(() => {
         for (const timeout of activityTimeoutsRef.current) {
             clearTimeout(timeout);
@@ -288,50 +166,25 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
     const startActivityLog = useCallback(() => {
         clearActivityTimers();
         setPanelMode("activity");
-        setActivitySteps(
-            TRANSFORMATION_STEPS_BASE.map((step, idx) => ({
-                ...step,
-                status: idx === 0 ? "in-progress" : "pending",
-            }))
-        );
+        setActivitySteps(createInitialSteps());
 
         activityTimeoutsRef.current = TRANSFORMATION_STEPS_BASE.map((_, idx) => {
             if (idx === 0) return null;
             return setTimeout(() => {
-                setActivitySteps(
-                    TRANSFORMATION_STEPS_BASE.map((step, stepIdx) => {
-                        if (stepIdx < idx) {
-                            return { ...step, status: "completed" as const };
-                        }
-                        if (stepIdx === idx) {
-                            return { ...step, status: "in-progress" as const };
-                        }
-                        return { ...step, status: "pending" as const };
-                    })
-                );
+                setActivitySteps(createProgressiveSteps(idx));
             }, idx * 700);
         }).filter(Boolean) as Array<ReturnType<typeof setTimeout>>;
     }, [clearActivityTimers]);
 
     const completeActivityLog = useCallback(() => {
         clearActivityTimers();
-        setActivitySteps(
-            TRANSFORMATION_STEPS_BASE.map((step) => ({
-                ...step,
-                status: "completed" as const,
-            }))
-        );
+        setActivitySteps(createCompletedSteps());
     }, [clearActivityTimers]);
 
     const resetActivityLog = useCallback(
         (hidePanel = true) => {
             clearActivityTimers();
-            setActivitySteps(
-                TRANSFORMATION_STEPS_BASE.map((step) => ({
-                    ...step,
-                    status: "pending" as const,
-                }))
-            );
+            setActivitySteps(createPendingSteps());
             if (hidePanel) {
                 showTemplatesPanel();
             }
@@ -342,12 +195,7 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
     const hideActivityLog = useCallback(() => {
         showTemplatesPanel();
         clearActivityTimers();
-        setActivitySteps(
-            TRANSFORMATION_STEPS_BASE.map((step) => ({
-                ...step,
-                status: "pending" as const,
-            }))
-        );
+        setActivitySteps(createPendingSteps());
     }, [clearActivityTimers, showTemplatesPanel]);
 
 const HANDOFF_TARGETS: Array<{
@@ -1104,20 +952,7 @@ const HANDOFF_TARGETS: Array<{
         persistAnalytics(modeAnalytics);
     }, [modeAnalytics]);
 
-    const markdownComponents: Components = {
-        code({ node: _node, inline, className, children, ...props }: MarkdownCodeProps) {
-            const match = /language-(\w+)/.exec(className || "");
-            return !inline && match ? (
-                <SyntaxHighlighter style={atomDark} language={match[1]} PreTag="div" {...props}>
-                    {String(children).replace(/\n$/, "")}
-                </SyntaxHighlighter>
-            ) : (
-                <code className={className} {...props}>
-                    {children}
-                </code>
-            );
-        },
-    };
+    const markdownComponents = useMemo(() => createMarkdownComponents(), []);
 
     const handleProfileChange = (profile: PromptProfile) => {
         setTargetProfile(profile);
@@ -1229,148 +1064,85 @@ const HANDOFF_TARGETS: Array<{
         }
     }, [panelMode, result, showTemplatesPanel]);
 
-    const handleTransform = async () => {
-        if (!inputText.trim()) {
-            setError("Input text cannot be empty");
-            return;
-        }
+    const runTransformFlow = useCallback(
+        async (kind: "transform" | "regenerate") => {
+            setError(null);
 
-        setError(null);
-        setIsTransforming(true);
-        startActivityLog();
+            const setProcessing = kind === "transform" ? setIsTransforming : setIsRegenerating;
+            setProcessing(true);
 
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-        }
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort();
+                abortControllerRef.current = null;
+            }
 
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
+            let controller: AbortController | null = null;
 
-        try {
-            const { augmentedInput } = await buildAugmentedPrompt();
-            const response = await fetch("/api/transform-prompt", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
+            try {
+                const { augmentedInput } = await buildAugmentedPrompt();
+
+                if (!augmentedInput.trim()) {
+                    const message = "Add prompt details or attach files with readable content before transforming.";
+                    setError(message);
+                    toast.error(message);
+                    return;
+                }
+
+                startActivityLog();
+
+                controller = new AbortController();
+                abortControllerRef.current = controller;
+
+                const transformResult = await executeTransformRequest({
                     inputText: augmentedInput,
                     systemPrompt: buildSystemPrompt(),
                     format,
-                }),
-                signal: controller.signal,
-            });
+                    signal: controller.signal,
+                });
+                setResult(transformResult);
+                completeActivityLog();
+                if (transformResult.metadata) {
+                    setPanelMode("analysis");
+                } else {
+                    showTemplatesPanel();
+                }
+            } catch (error: any) {
+                if (error?.name === "AbortError") {
+                    return;
+                }
 
-            if (!response.ok) {
-                const errorData = await response.text();
-                throw new Error(errorData || "Failed to transform prompt");
+                console.error(`Error ${kind === "transform" ? "transforming" : "regenerating"} prompt:`, error);
+                const message = error?.message || "An error occurred while transforming the prompt";
+                setError(message);
+                toast.error(message);
+                resetActivityLog();
+            } finally {
+                setProcessing(false);
+                if (controller && abortControllerRef.current === controller) {
+                    abortControllerRef.current = null;
+                }
             }
+        },
+        [
+            buildAugmentedPrompt,
+            buildSystemPrompt,
+            completeActivityLog,
+            format,
+            resetActivityLog,
+            showTemplatesPanel,
+            startActivityLog,
+        ]
+    );
 
-            const data = await response.json();
-            const metadata = parseTransformMetadata(data.metadata);
-            setResult({ refinedPrompt: data.refinedPrompt, format, metadata });
-            completeActivityLog();
-            if (metadata) {
-                setPanelMode("analysis");
-            } else {
-                showTemplatesPanel();
-            }
-        } catch (error: any) {
-            if (error.name === "AbortError") {
-                return;
-            }
+    const handleTransform = () => runTransformFlow("transform");
 
-            console.error("Error transforming prompt:", error);
-            setError(error.message || "An error occurred while transforming the prompt");
-            toast.error(error.message || "Failed to transform prompt");
-            resetActivityLog();
-        } finally {
-            setIsTransforming(false);
-            abortControllerRef.current = null;
-        }
-    };
-
-    const handleRegenerate = async () => {
-        if (!inputText.trim()) {
-            setError("Input text cannot be empty");
-            return;
-        }
-
-        setError(null);
-        setIsRegenerating(true);
-        startActivityLog();
-
-        if (abortControllerRef.current) {
-            abortControllerRef.current.abort();
-        }
-
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-
-        try {
-            const { augmentedInput } = await buildAugmentedPrompt();
-            const response = await fetch("/api/transform-prompt", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    inputText: augmentedInput,
-                    systemPrompt: buildSystemPrompt(),
-                    format,
-                }),
-                signal: controller.signal,
-            });
-
-            if (!response.ok) {
-                const errorData = await response.text();
-                throw new Error(errorData || "Failed to transform prompt");
-            }
-
-            const data = await response.json();
-            const metadata = parseTransformMetadata(data.metadata);
-            setResult({ refinedPrompt: data.refinedPrompt, format, metadata });
-            completeActivityLog();
-            if (metadata) {
-                setPanelMode("analysis");
-            } else {
-                showTemplatesPanel();
-            }
-        } catch (error: any) {
-            if (error.name === "AbortError") {
-                return;
-            }
-
-            console.error("Error regenerating prompt:", error);
-            setError(error.message || "An error occurred while transforming the prompt");
-            toast.error(error.message || "Failed to transform prompt");
-            resetActivityLog();
-        } finally {
-            setIsRegenerating(false);
-            abortControllerRef.current = null;
-        }
-    };
+    const handleRegenerate = () => runTransformFlow("regenerate");
 
     const copyToClipboard = async (text: string) => {
         try {
-            let contentToCopy = text;
-
-            if (result?.format === "json") {
-                try {
-                    const parsed = JSON.parse(text);
-                    contentToCopy = parsed.content || text;
-                } catch {
-                    contentToCopy = text;
-                }
-            } else {
-                const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/);
-                if (jsonMatch) {
-                    try {
-                        const parsed = JSON.parse(jsonMatch[1]);
-                        contentToCopy = parsed.content || text;
-                    } catch {
-                        contentToCopy = text;
-                    }
-                }
-            }
-
-            await navigator.clipboard.writeText(contentToCopy);
+            const formatForClipboard = result?.format ?? format;
+            const contentToCopy = deriveClipboardContent(text, formatForClipboard);
+            await writePlainClipboard(contentToCopy);
             toast.success("Copied to clipboard!");
         } catch (error) {
             console.error("Failed to copy to clipboard:", error);
@@ -1379,31 +1151,9 @@ const HANDOFF_TARGETS: Array<{
     };
 
     const copyAsRTF = async (text: string) => {
-        const fallbackCopy = async () => {
-            await navigator.clipboard.writeText(text);
-            toast.success("Copied as plain text (RTF not supported)");
-        };
-
         try {
-            const rtfContent = toRTF(text);
-            if (typeof window !== "undefined" && "ClipboardItem" in window && "write" in navigator.clipboard) {
-                try {
-                    const ClipboardItemConstructor = (window as typeof window & { ClipboardItem: typeof ClipboardItem }).ClipboardItem;
-                    const clipboardItem = new ClipboardItemConstructor({
-                        "text/rtf": new Blob([rtfContent], { type: "text/rtf" }),
-                        "text/plain": new Blob([text], { type: "text/plain" }),
-                    });
-                    await navigator.clipboard.write([clipboardItem]);
-                    toast.success("Copied as RTF!");
-                    return;
-                } catch (rtfError) {
-                    console.warn("RTF copy unsupported, falling back to plain text", rtfError);
-                    await fallbackCopy();
-                    return;
-                }
-            }
-
-            await fallbackCopy();
+            const copiedAsRich = await writeRichClipboard(text);
+            toast.success(copiedAsRich ? "Copied as RTF!" : "Copied as plain text (RTF not supported)");
         } catch (error) {
             console.error("Failed to copy prompt:", error);
             toast.error("Failed to copy prompt");
@@ -1412,15 +1162,8 @@ const HANDOFF_TARGETS: Array<{
 
     const downloadAsFile = (content: string, filename: string) => {
         try {
-            const blob = new Blob([content], { type: "text/plain" });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+            const mimeType = filename.endsWith(".json") ? "application/json" : "text/plain";
+            downloadContent({ content, filename, mimeType });
             toast.success("Download started!");
         } catch (error) {
             console.error("Failed to download file:", error);
