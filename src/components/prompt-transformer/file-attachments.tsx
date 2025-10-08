@@ -27,6 +27,8 @@ type PromptTransformerFileAttachmentsProps = {
     onRemoveFile: (id: string) => void;
     onRemoveAll: () => void;
     onTogglePreview: (id: string) => void;
+    onInjectFile: (id: string) => void;
+    onOptimizeFile: (id: string) => void;
 };
 
 export function PromptTransformerFileAttachments({
@@ -36,6 +38,8 @@ export function PromptTransformerFileAttachments({
     onRemoveFile,
     onRemoveAll,
     onTogglePreview,
+    onInjectFile,
+    onOptimizeFile,
 }: PromptTransformerFileAttachmentsProps) {
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const dragCounterRef = useRef(0);
@@ -195,6 +199,22 @@ export function PromptTransformerFileAttachments({
                                                     </span>
                                                 )}
                                             </span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => onOptimizeFile(file.id)}
+                                            className="inline-flex h-7 items-center justify-center rounded-full border border-transparent px-3 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                            aria-label={`Optimize context for ${file.name}`}
+                                        >
+                                            Optimize Context
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => onInjectFile(file.id)}
+                                            className="inline-flex h-7 items-center justify-center rounded-full border border-transparent px-3 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                                            aria-label={`Inject content of ${file.name}`}
+                                        >
+                                            Inject
                                         </button>
                                         <button
                                             type="button"

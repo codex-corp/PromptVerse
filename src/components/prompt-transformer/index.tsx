@@ -66,13 +66,45 @@ import { ENGINEERING_TEMPLATE_CATEGORIES, ENGINEERING_TEMPLATES_FLAT, type Engin
 import { cn } from "@/lib/utils";
 import { PromptTransformerFileAttachments, type UploadedFileState } from "./file-attachments";
 import ActivityLogPanel, { type TransformationStepState } from "./activity-log-panel";
+import ContextualOptimizer, { type OptimizerSnippetPayload } from "./contextual-optimizer";
 
-const ACCEPTED_EXTENSIONS = [".py", ".php", ".js", ".ts", ".html", ".css", ".md", ".txt", ".json", ".csv"];
+const ACCEPTED_EXTENSIONS = [
+    ".py",
+    ".php",
+    ".js",
+    ".ts",
+    ".html",
+    ".css",
+    ".md",
+    ".txt",
+    ".json",
+    ".csv",
+    ".xml",
+    ".yml",
+    ".yaml",
+    ".ini",
+    ".conf",
+    ".sql",
+    ".bash",
+    ".sh",
+    ".bat",
+    ".ps1",
+    ".env",
+    ".log",
+    ".pdf",
+    ".docx",
+    ".xlsx",
+    ".jpg",
+    ".jpeg"
+];
 const MAX_FILES = 10;
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_TOTAL_IMAGE_BYTES = 1024 * 1024;
 const MAX_CONTEXT_SIZE = 100 * 1024;
 const MAX_INPUT_LENGTH = 8000;
-
+const INPUT_COST_PER_1K = 0.005; // Approximate GPT‑4o input cost
+const OUTPUT_COST_PER_1K = 0.015; // Approximate GPT‑4o output cost
+const OUTPUT_TOKEN_MULTIPLIER = 1.5;
 const TRANSFORMATION_STEPS_BASE = [
     {
         title: "Analyzing Raw Prompt",
@@ -106,6 +138,14 @@ const enforceContextLimit = (files: UploadedFileState[]) => {
     let total = sortedByAdded.reduce((sum, file) => sum + (file.content?.length ?? 0), 0);
     const removalSet = new Set<string>();
 
+    let imageBytes = sortedByAdded.reduce((sum, file) => {
+        const extension = file.name.split('.').pop()?.toLowerCase();
+        if (extension && ["jpg", "jpeg", "png", "gif", "webp"].includes(extension)) {
+            return sum + (file.size ?? 0);
+        }
+        return sum;
+    }, 0);
+
     while (total > MAX_CONTEXT_SIZE && sortedByAdded.length) {
         const oldest = sortedByAdded.shift();
         if (!oldest) {
@@ -113,6 +153,22 @@ const enforceContextLimit = (files: UploadedFileState[]) => {
         }
         removalSet.add(oldest.id);
         total -= oldest.content?.length ?? 0;
+        const extension = oldest.name.split('.').pop()?.toLowerCase();
+        if (extension && ["jpg", "jpeg"].includes(extension)) {
+            imageBytes -= oldest.size ?? 0;
+        }
+    }
+
+    while (imageBytes > MAX_TOTAL_IMAGE_BYTES && sortedByAdded.length) {
+        const oldest = sortedByAdded.shift();
+        if (!oldest) {
+            break;
+        }
+        removalSet.add(oldest.id);
+        const extension = oldest.name.split('.').pop()?.toLowerCase();
+        if (extension && ["jpg", "jpeg"].includes(extension)) {
+            imageBytes -= oldest.size ?? 0;
+        }
     }
 
     const nextFiles = files.filter((file) => !removalSet.has(file.id));
@@ -136,12 +192,60 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
     const [forcedModes, setForcedModes] = useState<string[]>([]);
     const [modeAnalytics, setModeAnalytics] = useState<ModeAnalyticsState>(() => loadAnalyticsFromStorage());
     const abortControllerRef = useRef<AbortController | null>(null);
+    const inputTextareaRef = useRef<HTMLTextAreaElement | null>(null);
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFileState[]>([]);
     const [activitySteps, setActivitySteps] = useState<TransformationStepState[]>(() =>
         TRANSFORMATION_STEPS_BASE.map((step) => ({ ...step, status: "pending" as const }))
     );
     const [isActivityVisible, setIsActivityVisible] = useState(false);
     const activityTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
+    const [optimizerDialogOpen, setOptimizerDialogOpen] = useState(false);
+    const [optimizerSelectedFile, setOptimizerSelectedFile] = useState<UploadedFileState | null>(null);
+
+    const tokenMetrics = useMemo(() => {
+        const promptTokens = Math.ceil(charCount / 4);
+        if (promptTokens === 0) {
+            return {
+                promptTokens: 0,
+                estimatedOutputTokens: 0,
+                totalTokens: 0,
+                inputCost: 0,
+                outputCost: 0,
+                totalCost: 0,
+                complexity: "Low" as const,
+            };
+        }
+
+        const estimatedOutputTokens = Math.max(120, Math.ceil(promptTokens * OUTPUT_TOKEN_MULTIPLIER));
+        const totalTokens = promptTokens + estimatedOutputTokens;
+        const inputCost = (promptTokens / 1000) * INPUT_COST_PER_1K;
+        const outputCost = (estimatedOutputTokens / 1000) * OUTPUT_COST_PER_1K;
+        const totalCost = inputCost + outputCost * 10;
+
+        let complexity: "Low" | "Medium" | "High" = "Low";
+        if (promptTokens > 1200) {
+            complexity = "High";
+        } else if (promptTokens > 400) {
+            complexity = "Medium";
+        }
+
+        const complexityColors: Record<typeof complexity, string> = {
+            Low: "text-emerald-500 border-emerald-500/50 bg-emerald-500/10",
+            Medium: "text-amber-500 border-amber-500/50 bg-amber-500/10",
+            High: "text-red-500 border-red-500/50 bg-red-500/10",
+        };
+
+        return {
+            promptTokens,
+            estimatedOutputTokens,
+            totalTokens,
+            inputCost,
+            outputCost,
+            totalCost,
+            complexity,
+            complexityClass: complexityColors[complexity],
+        };
+    }, [charCount]);
 
     const topModes = useMemo(() => {
         const entries = Object.entries(modeAnalytics.modeCounts);
@@ -636,6 +740,173 @@ const HANDOFF_TARGETS: Array<{
         [uploadedFiles]
     );
 
+    const appendToInputText = useCallback(
+        (
+            content: string,
+            {
+                prependNewlines = true,
+                atSelection = true,
+            }: { prependNewlines?: boolean; atSelection?: boolean } = {}
+        ) => {
+            if (!content.trim()) {
+                return;
+            }
+
+            const textarea = inputTextareaRef.current;
+
+            setInputText((previous) => {
+                let before = previous;
+                let selected = "";
+                let after = "";
+
+                if (textarea && atSelection) {
+                    const start = Math.max(0, Math.min(previous.length, textarea.selectionStart ?? previous.length));
+                    const end = Math.max(start, Math.min(previous.length, textarea.selectionEnd ?? previous.length));
+                    before = previous.slice(0, start);
+                    selected = previous.slice(start, end);
+                    after = previous.slice(end);
+                }
+
+                const normalized = content.trimEnd();
+                let insertSegment = normalized;
+                let afterSegment = after;
+
+                if (selected.trim().length > 0) {
+                    const selectionCore = selected.trimEnd();
+                    const spacer = selectionCore.length ? "\n\n" : "";
+                    insertSegment = `${selectionCore}${spacer}${normalized}`;
+                    if (afterSegment.length && !afterSegment.startsWith("\n")) {
+                        afterSegment = `\n\n${afterSegment}`;
+                    }
+                } else {
+                    if (prependNewlines && before.length && !before.endsWith("\n")) {
+                        insertSegment = `\n\n${insertSegment}`;
+                    }
+                    if (prependNewlines && afterSegment.length && !afterSegment.startsWith("\n")) {
+                        afterSegment = `\n\n${afterSegment}`;
+                    }
+                }
+
+                let combined = before + insertSegment + afterSegment;
+                let caretIndex = (before + insertSegment).length;
+
+                if (combined.length > MAX_INPUT_LENGTH) {
+                    toast.info(`Injected content truncated to ${MAX_INPUT_LENGTH} characters.`);
+                    combined = combined.slice(0, MAX_INPUT_LENGTH);
+                    caretIndex = Math.min(caretIndex, combined.length);
+                }
+
+                setCharCount(combined.length);
+
+                requestAnimationFrame(() => {
+                    const textareaInstance = inputTextareaRef.current;
+                    if (!textareaInstance) {
+                        return;
+                    }
+                    textareaInstance.focus();
+                    textareaInstance.setSelectionRange(caretIndex, caretIndex);
+                });
+
+                return combined;
+            });
+        },
+        [toast]
+    );
+
+    const handleInjectFile = useCallback(
+        (fileId: string) => {
+            const targetFile = uploadedFiles.find((file) => file.id === fileId);
+            if (!targetFile) {
+                return;
+            }
+
+            const targetFileName = targetFile.name;
+
+            const injectContent = (raw: string | undefined) => {
+                const trimmed = raw?.trim();
+                if (!trimmed) {
+                    toast.error("Content unavailable");
+                    return;
+                }
+
+                appendToInputText(trimmed, { prependNewlines: true });
+                toast.success(`Injected content from ${targetFileName}.`, { duration: 2200 });
+            };
+
+            if (typeof targetFile.content === "string" && targetFile.content.trim().length > 0) {
+                injectContent(targetFile.content);
+                return;
+            }
+
+            setUploadedFiles((prev) =>
+                prev.map((file) =>
+                    file.id === fileId
+                        ? { ...file, status: "parsing" as const }
+                        : file
+                )
+            );
+
+            readFileContentWithSanitization(targetFile.file)
+                .then(({ sanitized, preview, isBinary }) => {
+                    if (isBinary) {
+                        setUploadedFiles((current) =>
+                            current.map((file) =>
+                                file.id === fileId
+                                    ? {
+                                          ...file,
+                                          status: "error" as const,
+                                          content: "",
+                                          preview: file.preview ?? preview ?? "Binary content unavailable.",
+                                      }
+                                    : file
+                            )
+                        );
+                        toast.error("Content unavailable");
+                        return;
+                    }
+
+                    const safeContent = sanitized ?? "";
+
+                    setUploadedFiles((current) =>
+                        current.map((file) =>
+                            file.id === fileId
+                                ? {
+                                      ...file,
+                                      status: "parsed" as const,
+                                      content: safeContent,
+                                      preview: file.preview ?? preview,
+                                  }
+                                : file
+                        )
+                    );
+
+                    if (!safeContent.trim()) {
+                        toast.error("Content unavailable");
+                        return;
+                    }
+
+                    appendToInputText(safeContent, { prependNewlines: true });
+                    toast.success(`Injected content from ${targetFileName}.`, { duration: 2200 });
+                })
+                .catch((error) => {
+                    console.error("Failed to inject file content", error);
+                    toast.error("Content unavailable");
+                    setUploadedFiles((current) =>
+                        current.map((file) =>
+                            file.id === fileId
+                                ? {
+                                      ...file,
+                                      status: "error" as const,
+                                      content: file.content ?? "",
+                                  }
+                                : file
+                        )
+                    );
+                });
+        },
+        [appendToInputText, toast, uploadedFiles]
+    );
+
     const parseFilesForContext = useCallback(async () => {
         const filesToParse = uploadedFiles.filter((file) => file.content === undefined && file.status !== "parsing");
 
@@ -729,6 +1000,39 @@ const HANDOFF_TARGETS: Array<{
 
         return updatedFiles;
     }, [uploadedFiles]);
+
+    const handleCloseOptimizer = useCallback(() => {
+        setOptimizerDialogOpen(false);
+        setOptimizerSelectedFile(null);
+    }, []);
+
+    const handleOpenOptimizer = useCallback(
+        (fileId: string) => {
+            const targetFile = uploadedFiles.find((file) => file.id === fileId);
+            if (!targetFile) {
+                toast.error("Unable to open optimizer for this file.");
+                return;
+            }
+
+            setOptimizerSelectedFile(targetFile);
+            setOptimizerDialogOpen(true);
+        },
+        [uploadedFiles]
+    );
+
+    const handleInjectOptimizerSnippet = useCallback(
+        ({ snippet }: OptimizerSnippetPayload) => {
+            const trimmedSnippet = snippet.trim();
+            if (!trimmedSnippet) {
+                return;
+            }
+
+            appendToInputText(trimmedSnippet, { prependNewlines: true });
+            toast.success("Snippet injected into raw prompt.");
+            handleCloseOptimizer();
+        },
+        [appendToInputText, handleCloseOptimizer]
+    );
 
     const buildAugmentedPrompt = useCallback(async () => {
         const parsed = await parseFilesForContext();
@@ -1333,8 +1637,9 @@ const HANDOFF_TARGETS: Array<{
     }, []);
 
     return (
-        <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent className="h-[94vh] max-h-[94vh] max-w-[95vw] sm:max-w-[90vw] lg:max-w-[1200px] xl:max-w-[1400px] 2xl:max-w-[1600px] flex flex-col overflow-hidden rounded-3xl border border-border/60 bg-background/95 p-0 shadow-2xl">
+        <>
+            <Dialog open={open} onOpenChange={(nextOpen) => { if (!nextOpen) handleClose(); }}>
+                <DialogContent className="h-[94vh] max-h-[94vh] max-w-[95vw] sm:max-w-[90vw] lg:max-w-[1200px] xl:max-w-[1400px] 2xl:max-w-[1600px] flex flex-col overflow-hidden rounded-3xl border border-border/60 bg-background/95 p-0 shadow-2xl">
                 <div className="dialog-content-scrollbar h-full overflow-y-auto">
                     <DialogHeader className="shrink-0 border-b px-6 pb-4 pt-6" data-tour-id="tour-header">
                         <DialogTitle className="flex items-center gap-2">
@@ -1430,6 +1735,7 @@ const HANDOFF_TARGETS: Array<{
                                             </div>
                                             <div className="relative">
                                                 <Textarea
+                                                    ref={inputTextareaRef}
                                                     placeholder="Describe your idea concisely... (e.g., 'Ship a migration plan for multi-tenant billing')."
                                                     value={inputText}
                                                     onChange={(event) => {
@@ -1447,11 +1753,11 @@ const HANDOFF_TARGETS: Array<{
                                                     disabled={isTransforming}
                                                     maxLength={MAX_INPUT_LENGTH}
                                                 />
-                                                <div className="pointer-events-none absolute bottom-2 right-3 rounded-full bg-background/90 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
-                                                    {charCount}/{MAX_INPUT_LENGTH}
-                                                </div>
-                                                {inputText && (
-                                                    <Button
+                                            <div className="pointer-events-none absolute bottom-2 right-3 rounded-full bg-background/90 px-3 py-1 text-[11px] text-muted-foreground shadow-sm">
+                                                {charCount}/{MAX_INPUT_LENGTH}
+                                            </div>
+                                            {inputText && (
+                                                <Button
                                                         variant="ghost"
                                                         size="icon"
                                                         className="absolute top-2 right-2 h-6 w-6"
@@ -1464,6 +1770,56 @@ const HANDOFF_TARGETS: Array<{
                                                     </Button>
                                                 )}
                                             </div>
+                                            {charCount > 0 && (
+                                                <div className="mt-3 rounded-xl border bg-muted/40 p-3 text-[11px] text-muted-foreground">
+                                                    <div className="flex flex-wrap items-center gap-3">
+                                                        <div>
+                                                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Prompt tokens</p>
+                                                            <p className="text-sm font-semibold text-foreground">
+                                                                {tokenMetrics.promptTokens.toLocaleString()}
+                                                            </p>
+                                                        </div>
+                                                        <Separator orientation="vertical" className="hidden h-6 lg:flex" />
+                                                        <div>
+                                                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Estimated output</p>
+                                                            <p className="text-sm font-semibold text-foreground">
+                                                                {tokenMetrics.estimatedOutputTokens.toLocaleString()}
+                                                            </p>
+                                                        </div>
+                                                        <Separator orientation="vertical" className="hidden h-6 lg:flex" />
+                                                        <div>
+                                                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Total tokens</p>
+                                                            <p className="text-sm font-semibold text-foreground">
+                                                                {tokenMetrics.totalTokens.toLocaleString()}
+                                                            </p>
+                                                        </div>
+                                                        <Separator orientation="vertical" className="hidden h-6 lg:flex" />
+                                                        <div className="flex items-center gap-2">
+                                                            <div>
+                                                                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Estimated cost</p>
+                                                                <p className="text-sm font-semibold text-foreground">
+                                                                    ${tokenMetrics.totalCost.toFixed(4)}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        <Separator orientation="vertical" className="hidden h-6 lg:flex" />
+                                                        <div>
+                                                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Complexity</p>
+                                                            <p className="text-sm font-semibold text-foreground">
+                                                                <Badge
+                                                                    variant="outline"
+                                                                    className={cn(
+                                                                        "px-2 py-0 text-[10px] uppercase tracking-wide",
+                                                                        tokenMetrics.complexityClass,
+                                                                    )}
+                                                                >
+                                                                    {tokenMetrics.complexity}
+                                                                </Badge>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
                                             <p className="text-xs text-muted-foreground">
                                                 Aim for high-signal context: audience, constraints, done definition, and any links you want the prompt to reference.
                                             </p>
@@ -1474,6 +1830,8 @@ const HANDOFF_TARGETS: Array<{
                                                 onRemoveFile={handleRemoveFile}
                                                 onRemoveAll={handleRemoveAll}
                                                 onTogglePreview={handleTogglePreview}
+                                                onInjectFile={handleInjectFile}
+                                                onOptimizeFile={handleOpenOptimizer}
                                             />
                                         </div>
 
@@ -1865,8 +2223,15 @@ const HANDOFF_TARGETS: Array<{
                         </div>
                     </div>
                 </div>
-            </DialogContent>
-        </Dialog>
+                </DialogContent>
+            </Dialog>
+            <ContextualOptimizer
+                open={optimizerDialogOpen}
+                file={optimizerSelectedFile}
+                onClose={handleCloseOptimizer}
+                onInjectSnippet={handleInjectOptimizerSnippet}
+            />
+        </>
     );
 }
 

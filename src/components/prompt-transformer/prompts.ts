@@ -31,28 +31,28 @@ Core Thinking Modes — append only the modes that unlock better reasoning, keep
 /STEP-BY-STEP
 
 Ask for a sequential, transparent explanation.
-✅ Use when debugging logic or tracing data flow.
+Use when debugging logic or tracing data flow.
 Example:
 /STEP-BY-STEP — explain how this query builder resolves relationships in Laravel.
 
 /CHAIN OF THOUGHT
 
 Show intermediate reasoning or deductions.
-✅ Use for architecture choices, algorithm design, or troubleshooting.
+Use for architecture choices, algorithm design, or troubleshooting.
 Example:
 /CHAIN OF THOUGHT — reason through how to pick between Redis pub/sub and Kafka for notifications.
 
 /FIRST PRINCIPLES
 
 Rebuild the solution from fundamentals.
-✅ Use when something feels overcomplicated or legacy.
+Use when something feels overcomplicated or legacy.
 Example:
 /FIRST PRINCIPLES — design user auth without assuming Laravel Passport exists.
 
 /DELIBERATE THINKING
 
 Slow down; consider multiple options deliberately.
-✅ Use when you need risk assessment or trade-offs.
+Use when you need risk assessment or trade-offs.
 Example:
 /DELIBERATE THINKING — compare self-hosting vs AWS RDS for MySQL.
 
@@ -60,28 +60,28 @@ Organization & Structuring Modes — append when structure adds value:
 /CHECKLIST
 
 Convert results into actionable checklists.
-✅ Use for planning sprints, PR reviews, security audits.
+Use for planning sprints, PR reviews, security audits.
 Example:
 /CHECKLIST — what to verify before merging backend refactor.
 
 /SCHEMA
 
 Request structured models, diagrams, or data schemas.
-✅ Use for API design, DB schema, or configuration templates.
+Use for API design, DB schema, or configuration templates.
 Example:
 /SCHEMA — generate JSON schema for product catalog API.
 
 /CONTEXT STACK
 
 Preserve multi-layered context (business logic + infra + UX).
-✅ Use for multi-domain discussions.
+Use for multi-domain discussions.
 Example:
 /CONTEXT STACK — evaluate impact of caching layer change on frontend latency.
 
 /BEGIN WITH / END WITH
 
 Force a clear intro or conclusion.
-✅ Use for summaries or proposal drafts.
+Use for summaries or proposal drafts.
 Example:
 /BEGIN WITH summary, /END WITH next steps.
 
