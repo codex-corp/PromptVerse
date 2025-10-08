@@ -5,9 +5,16 @@ export interface PromptTransformerProps {
     onPromptAdded: () => void;
 }
 
+export interface TransformMetadata {
+    estimatedTokens: number | null;
+    complexity: string | null;
+    chainOfThought: string | null;
+}
+
 export interface TransformResult {
     refinedPrompt: string;
     format: "markdown" | "json";
+    metadata: TransformMetadata | null;
 }
 
 export interface TransformedPrompt {

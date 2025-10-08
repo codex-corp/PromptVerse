@@ -49,6 +49,7 @@ import type {
     ModeSuggestion,
     PromptProfile,
     PromptTransformerProps,
+    TransformMetadata,
     TransformResult,
     TransformedPrompt
 } from "./types";
@@ -66,6 +67,7 @@ import { ENGINEERING_TEMPLATE_CATEGORIES, ENGINEERING_TEMPLATES_FLAT, type Engin
 import { cn } from "@/lib/utils";
 import { PromptTransformerFileAttachments, type UploadedFileState } from "./file-attachments";
 import ActivityLogPanel, { type TransformationStepState } from "./activity-log-panel";
+import TransformationAnalysis from "./transformation-analysis";
 import ContextualOptimizer, { type OptimizerSnippetPayload } from "./contextual-optimizer";
 
 const ACCEPTED_EXTENSIONS = [
@@ -197,10 +199,14 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
     const [activitySteps, setActivitySteps] = useState<TransformationStepState[]>(() =>
         TRANSFORMATION_STEPS_BASE.map((step) => ({ ...step, status: "pending" as const }))
     );
-    const [isActivityVisible, setIsActivityVisible] = useState(false);
+    const [panelMode, setPanelMode] = useState<"templates" | "activity" | "analysis">("templates");
     const activityTimeoutsRef = useRef<Array<ReturnType<typeof setTimeout>>>([]);
     const [optimizerDialogOpen, setOptimizerDialogOpen] = useState(false);
     const [optimizerSelectedFile, setOptimizerSelectedFile] = useState<UploadedFileState | null>(null);
+
+    const showTemplatesPanel = useCallback(() => {
+        setPanelMode("templates");
+    }, []);
 
     const tokenMetrics = useMemo(() => {
         const promptTokens = Math.ceil(charCount / 4);
@@ -258,6 +264,20 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
     );
     const quickTemplates = useMemo(() => ENGINEERING_TEMPLATES_FLAT.slice(0, 4), []);
 
+    const parseTransformMetadata = useCallback((metadata: unknown): TransformMetadata | null => {
+        if (!metadata || typeof metadata !== "object") {
+            return null;
+        }
+
+        const value = metadata as Record<string, unknown>;
+
+        return {
+            estimatedTokens: typeof value.estimatedTokens === "number" ? value.estimatedTokens : null,
+            complexity: typeof value.complexity === "string" ? value.complexity : null,
+            chainOfThought: typeof value.chainOfThought === "string" ? value.chainOfThought : null,
+        };
+    }, []);
+
     const clearActivityTimers = useCallback(() => {
         for (const timeout of activityTimeoutsRef.current) {
             clearTimeout(timeout);
@@ -267,7 +287,7 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
 
     const startActivityLog = useCallback(() => {
         clearActivityTimers();
-        setIsActivityVisible(true);
+        setPanelMode("activity");
         setActivitySteps(
             TRANSFORMATION_STEPS_BASE.map((step, idx) => ({
                 ...step,
@@ -313,14 +333,14 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
                 }))
             );
             if (hidePanel) {
-                setIsActivityVisible(false);
+                showTemplatesPanel();
             }
         },
-        [clearActivityTimers],
+        [clearActivityTimers, showTemplatesPanel],
     );
 
     const hideActivityLog = useCallback(() => {
-        setIsActivityVisible(false);
+        showTemplatesPanel();
         clearActivityTimers();
         setActivitySteps(
             TRANSFORMATION_STEPS_BASE.map((step) => ({
@@ -328,7 +348,7 @@ export function PromptTransformer({ open, onOpenChange, authorId, onPromptAdded 
                 status: "pending" as const,
             }))
         );
-    }, [clearActivityTimers]);
+    }, [clearActivityTimers, showTemplatesPanel]);
 
 const HANDOFF_TARGETS: Array<{
     id: string;
@@ -1057,6 +1077,7 @@ const HANDOFF_TARGETS: Array<{
     const isChatGPT = targetProfile === "chatgpt";
     const showResult = Boolean(result);
     const isProcessing = isTransforming || isRegenerating;
+    const showAnalysisPanel = panelMode === "analysis" && Boolean(result?.metadata);
 
     useEffect(() => {
         if (targetProfile !== "standard") {
@@ -1202,6 +1223,12 @@ const HANDOFF_TARGETS: Array<{
         };
     }, [clearActivityTimers]);
 
+    useEffect(() => {
+        if (panelMode === "analysis" && !(result && result.metadata)) {
+            showTemplatesPanel();
+        }
+    }, [panelMode, result, showTemplatesPanel]);
+
     const handleTransform = async () => {
         if (!inputText.trim()) {
             setError("Input text cannot be empty");
@@ -1238,8 +1265,14 @@ const HANDOFF_TARGETS: Array<{
             }
 
             const data = await response.json();
-            setResult({ refinedPrompt: data.refinedPrompt, format });
+            const metadata = parseTransformMetadata(data.metadata);
+            setResult({ refinedPrompt: data.refinedPrompt, format, metadata });
             completeActivityLog();
+            if (metadata) {
+                setPanelMode("analysis");
+            } else {
+                showTemplatesPanel();
+            }
         } catch (error: any) {
             if (error.name === "AbortError") {
                 return;
@@ -1291,8 +1324,14 @@ const HANDOFF_TARGETS: Array<{
             }
 
             const data = await response.json();
-            setResult({ refinedPrompt: data.refinedPrompt, format });
+            const metadata = parseTransformMetadata(data.metadata);
+            setResult({ refinedPrompt: data.refinedPrompt, format, metadata });
             completeActivityLog();
+            if (metadata) {
+                setPanelMode("analysis");
+            } else {
+                showTemplatesPanel();
+            }
         } catch (error: any) {
             if (error.name === "AbortError") {
                 return;
@@ -2064,9 +2103,9 @@ const HANDOFF_TARGETS: Array<{
                                     <div
                                         className={cn(
                                             "absolute inset-0 z-0 transition-all duration-500 ease-in-out",
-                                            isActivityVisible
-                                                ? "translate-x-full opacity-0 pointer-events-none"
-                                                : "translate-x-0 opacity-100"
+                                            panelMode === "templates"
+                                                ? "translate-x-0 opacity-100"
+                                                : "translate-x-full opacity-0 pointer-events-none"
                                         )}
                                     >
                                         <TemplatesPanel
@@ -2078,7 +2117,7 @@ const HANDOFF_TARGETS: Array<{
                                     <div
                                         className={cn(
                                             "absolute inset-0 z-10 transition-all duration-500 ease-in-out",
-                                            isActivityVisible
+                                            panelMode === "activity"
                                                 ? "translate-x-0 opacity-100"
                                                 : "translate-x-full opacity-0 pointer-events-none"
                                         )}
@@ -2088,6 +2127,21 @@ const HANDOFF_TARGETS: Array<{
                                             onBackToTemplates={hideActivityLog}
                                             canDismiss={!isTransforming && !isRegenerating}
                                         />
+                                    </div>
+                                    <div
+                                        className={cn(
+                                            "absolute inset-0 z-20 transition-all duration-500 ease-in-out",
+                                            showAnalysisPanel
+                                                ? "translate-x-0 opacity-100"
+                                                : "translate-x-full opacity-0 pointer-events-none"
+                                        )}
+                                    >
+                                        {showAnalysisPanel && result?.metadata && (
+                                            <TransformationAnalysis
+                                                metadata={result.metadata}
+                                                onBackToTemplates={showTemplatesPanel}
+                                            />
+                                        )}
                                     </div>
                                 </div>
 
